@@ -1,0 +1,64 @@
+# 5-카테고리 하이브리드 프레임워크 기반 FinQA-Pro 데이터셋 구축 프로젝트
+# Core dependencies
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+lxml>=4.9.3
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Natural Language Processing
+nltk>=3.8.0
+scikit-learn>=1.3.0
+
+# Data Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.15.0
+wordcloud>=1.9.0
+
+# Web Framework
+streamlit>=1.25.0
+
+# API and Rate Limiting
+requests-ratelimiter>=0.4.0
+
+# Configuration and Environment
+pyyaml>=6.0.0
+python-dotenv>=1.0.0
+
+# Data Processing
+openpyxl>=3.1.0
+xlsxwriter>=3.1.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Logging and Monitoring
+loguru>=0.7.0
+
+# Progress Bars
+tqdm>=4.65.0
+
+# JSON and Data Serialization
+ujson>=5.8.0
+
+# HTTP Client
+httpx>=0.24.0
+
+# Date and Time
+python-dateutil>=2.8.0
+
+# File Processing
+chardet>=5.1.0
+
+# Statistical Analysis
+scipy>=1.11.0
+statsmodels>=0.14.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# Hugging Face Datasets
+datasets>=2.14.0
+huggingface_hub>=0.16.0

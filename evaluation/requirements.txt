@@ -1,0 +1,240 @@
+# FinanceReasoning Evaluation System
+
+FinanceReasoning arXiv paper 기반 LLM 평가 시스템
+
+## 📋 완료된 컴포넌트
+
+### 핵심 모듈
+
+1. **config.py** - API 키 관리 (env vars + YAML 설정)
+2. **dataset_loader.py** - FinanceReasoning 데이터셋 로드
+3. **prompt_builder.py** - 구조화된 프롬프트 생성
+4. **model_runner.py** - 비동기 LLM 실행, 레이트 리미팅, 비용 추적
+5. **response_parser.py** - LLM 응답 및 추론 단계 파싱
+6. **metrics_evaluator.py** - 6종 평가 지표 계산
+7. **result_store.py** - SQLite 저장소 및 캐싱
+
+### 지원되는 LLM 프로바이더
+
+- **OpenAI**: GPT-5, GPT-4o, GPT-4o Mini
+- **Anthropic**: Claude Sonnet 4.5, Claude Sonnet 4.1
+
+## 🏗️ 시스템 아키텍처
+
+```
+┌──────────────────────────────────────────┐
+│                CLI / Config Entry Point     │
+└───────────────────────┬──────────────────┘
+                        │
+┌───────────────────────▼──────────────────┐
+│            Dataset Loader  │ Prompt Builder │ Model Registry │
+│  local JSON files│ templates/spec   │ providers/models │
+└───────┬────────┘   └───────┬──────────────┘
+                            │                   │
+┌───────────▼───────────────────────────┐
+│          Model Runner (Async, Rate-Limited)      │
+│          OpenAI/Anthropic adapters                 │
+│          retry + cost tracking                      │
+└───────────┬───────────────────────────┘
+                            │
+                           ┌───────────▼───────────────────────────┐
+│          Response Parser / Trace Extractor         │
+│          final answer, steps, citations, etc.          │
+└───────────┬───────────────────────────┘
+                                       │
+                           ┌───────────▼───────────────────────────┐
+│                 Metrics Evaluator                  │
+│          Paper metrics (accuracy, completeness, etc.)   │
+└───────────┬───────────────────────────┘
+                                       │
+                 ┌─────────────────────▼─────────────────────┐
+│           Result Store + Cache                     │
+│          SQLite persistence + JSON artifacts + blobs   │
+└─────────────────────┬──────────────────────┘
+                                       │
+                       ┌───────────────▼──────────────────────┐
+│            Aggregator / Comparator                 │
+│          per-model, per-category, overall           │
+└─────────────────────┬──────────────────────┘
+                                       │
+                         ┌───────────────▼──────────────────────┐
+│            Report Generator                         │
+│          Markdown/HTML + figures                 │
+└──────────────────────────────────────────────┘
+```
+
+## 📊 평가 지표 (Paper 기준)
+
+### 1. Final Answer Accuracy
+정답 정확도 (ground_truth과 LLM 응답 비교)
+
+### 2. Step Completeness
+추론 단계 완전성 (ground_truth_steps 중 몇 퍼센트 포함)
+
+### 3. Step Order Correctness
+추론 단계 순서 정확성
+
+### 4. Reasoning Similarity
+추론 유형 분포 유사성 (Jaccard Index, 0-1.0)
+
+### 5. Hallucination Rate
+할루시네이션 비율 (LLM이 ground_truth에 없는 단계 생성 비율)
+
+### 6. Overall Reasoning Score
+종합 점수 (Paper 공식):
+```
+Overall Reasoning Score =
+  (Final Answer Accuracy × 0.4) +
+  (Step Completeness × 0.3) +
+  (Step Order Correctness × 0.1) +
+  ((1 - Hallucination Rate) × 0.2)
+```
+
+## 🚀 시작 방법
+
+### 1단계: 환경 설정
+
+```bash
+# 프로젝트 루트에서 .env 파일 생성
+
+# OpenAI API 키
+OPENAI_API_KEY=sk-...
+
+# Anthropic API 키
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### 2단계: 평가 실행
+
+```bash
+# 평가 수행 (예: 5개 예제, hard.json 전체)
+python -m financereasoning.eval run-eval \
+  --dataset hard \
+  --limit 5 \
+  --models gpt-5-2025-08-07,claude-sonnet-4.5
+```
+
+### 3단계: 결과 조회
+
+```bash
+# 평가 결과 확인
+python -m financereasoning.eval get-eval <eval_id>
+```
+
+### 4단계: 보고서 생성
+
+```bash
+# 보고서 생성 (Markdown 형식)
+python -m financereasoning.eval report <eval_id>
+```
+
+## 📂 파일 구조
+
+```
+data/financereasoning/
+├── evaluation/
+│   ├── __init__.py
+│   ├── config.py              # 환경 변수 관리
+│   ├── dataset_loader.py       # 데이터셋 로드
+│   ├── prompt_builder.py       # 프롬프트 빌더
+│   ├── model_runner.py       # LLM 실행 (async, rate limit)
+│   ├── response_parser.py     # 응답 파싱
+│   ├── metrics_evaluator.py   # 평가 지표 계산
+│   └── result_store.py       # 결과 저장 (SQLite)
+└── results/
+    ├── evaluations.db          # SQLite 데이터베이스
+    └── evaluations.db
+```
+
+## 🔑 API 인증 요구사항
+
+현재 시스템은 다음 API를 지원합니다:
+
+### OpenAI
+- **GPT-5 (Aug 2025)**: Paper 최고 성능
+  - 모델 ID: `gpt-5-2025-08-07`
+  - 최대 토큰: 128K
+  - 비용: $15.00/1M 토큰
+- **GPT-4o / GPT-4o Mini**: 경제 옵션
+  - 최대 토큰: 128K
+  - 비용: $0.15/1M 토큰
+- **GPT-4o**: 이전 버전
+  - 최대 토큰: 128K
+  - 비용: $2.50/1M 토큰
+
+### Anthropic
+- **Claude Sonnet 4.5**: 최고 추론 성능
+  - 모델 ID: `claude-sonnet-4.5-20250514`
+  - 최대 토큰: 200K
+  - 비용: $3.00/1M 토큰
+  - 온도: 1.0 (논문 추론에 최적)
+- **Claude Sonnet 4.1**: 비용 최적화
+  - 모델 ID: `claude-sonnet-4.1-20250201`
+  - 최대 토큰: 200K
+  - 비용: $3.00/1M 토큰
+  - 온도: 0.7
+
+## 📋 사용 예시
+
+### 예제 1: 기본 평가
+
+```bash
+# 전체 데이터셋에서 5개 예제 평가
+python -m financereasoning.eval run-eval \
+  --dataset hard \
+  --limit 5 \
+  --models gpt-5-2025-08-07
+```
+
+### 예제 2: 특정 난이도만 평가
+
+```bash
+# hard 난이도만 평가
+python -m financereasoning.eval run-eval \
+  --dataset hard \
+  --limit 10 \
+  --level hard \
+  --models claude-sonnet-4.5
+```
+
+### 예제 3: 비용 한도 테스트
+
+```bash
+# 최대 비용 $5.00으로 제한
+python -m financereasoning.eval run-eval \
+  --dataset hard \
+  --limit 3 \
+  --max-cost-usd 5.0 \
+  --models gpt-5-2025-08-07
+```
+
+## 📖 참고 자료
+
+- **논문**: FinanceReasoning: Benchmarking Financial Numerical Reasoning (arXiv:2506.05828)
+- **공식 저장소**: GitHub - https://github.com/BUPT-Reasoning-Lab/FinanceReasoning
+- **Hugging Face Dataset**: https://huggingface.co/datasets/BUPT-Reasoning-Lab/FinanceReasoning
+- **Finance Arena**: https://www.financearena.ai/
+- **Finance Agent**: https://www.vals.ai/benchmarks/finance_agent
+
+## 🔧 필수 Python 라이브러리
+
+```bash
+pip install httpx pyyaml
+```
+
+## ✅ 현재 상태
+
+- [x] 모든 핵심 컴포넌트 구현 완료
+- [x] Paper 기반 평가 시스템 완비
+- [x] SQLite 저장소 + 캐싱 구현
+- [x] 비동기 실행, 레이트 리미팅 지원
+- [x] OpenAI + Anthropic 프로바이더 사전 정의
+- [x] CLI 진입점 구현 (financereasoning.eval)
+
+## 🚀 다음 작업
+
+1. **requirements.txt 생성** - 설치 안내, API 키 예시
+2. **financereasoning.eval CLI 진입점 구현**
+3. **전체 시스템 통합 테스트**
+4. **README.md 및 ARCHITECTURE.md 작성**
+5. **사용자 매뉴얼**
