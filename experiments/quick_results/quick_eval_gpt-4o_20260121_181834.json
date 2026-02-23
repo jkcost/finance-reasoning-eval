@@ -1,0 +1,77 @@
+{
+  "timestamp": "2026-01-21T18:18:34.841508",
+  "model_id": "gpt-4o",
+  "num_examples": 2,
+  "aggregate_metrics": {
+    "cot_accuracy": 0.0,
+    "pot_accuracy": 1.0,
+    "cot_avg_overall_score": 0,
+    "pot_avg_overall_score": 1.0,
+    "cot_avg_step_completeness": 0,
+    "cot_avg_hallucination_rate": 0,
+    "total_cost_usd": 0.018713,
+    "total_time_seconds": 6.026334762573242
+  },
+  "examples": [
+    {
+      "example_id": "test-2000",
+      "question": "what would the 2012 shares outstanding in millions have been without the acquisition of smith international? Answer to the nearest integer.",
+      "context_preview": "schlumberger limited and subsidiaries shares of common stock ( stated in millions ) issued in treasury shares outstanding .\n\n|  | Issued | In Treasury | Shares Outstanding |\n| :--- | :--- | :--- | :--...",
+      "ground_truth": 1152,
+      "ground_truth_solution": "shares_outstanding = 1328\nacquisition_cost = 176\nshares_sold = 0\noption_exchanged = 0\nemployee_plan = 0\nstock_repurchase = 0\nconversion_debentures = 0\nvesting_restricted_stock = 0\nanswer = shares_outstanding - acquisition_cost - shares_sold - option_exchanged - employee_plan - stock_repurchase - conversion_debentures - vesting_restricted_stock",
+      "cot": {
+        "answer": null,
+        "correct": false,
+        "steps": [],
+        "metrics": null,
+        "raw_response": "",
+        "cost_usd": 0.0,
+        "time_seconds": 0.0
+      },
+      "pot": {
+        "answer": 1152.0,
+        "correct": true,
+        "code": "# Define variables\ninitial_shares_2012 = 1328  # Shares outstanding at end of 2012\nacquisition_shares = 176  # Shares added due to acquisition of Smith International\n\n# Calculate shares outstanding without the acquisition\nshares_without_acquisition = initial_shares_2012 - acquisition_shares\n\n# Round to the nearest integer since shares are in millions\nanswer = round(shares_without_acquisition)\n\n# Return final result\nreturn answer",
+        "execution_success": true,
+        "execution_output": 1152.0,
+        "metrics": {
+          "final_answer_correct": true,
+          "execution_success": true
+        },
+        "raw_response": "```python\n# Define variables\ninitial_shares_2012 = 1328  # Shares outstanding at end of 2012\nacquisition_shares = 176  # Shares added due to acquisition of Smith International\n\n# Calculate shares outstanding without the acquisition\nshares_without_acquisition = initial_shares_2012 - acquisition_shares\n\n# Round to the nearest integer since shares are in millions\nanswer = round(shares_without_acquisition)\n\n# Return final result\nreturn answer\n```",
+        "cost_usd": 0.009645750000000002,
+        "time_seconds": 3.067462682723999
+      }
+    },
+    {
+      "example_id": "test-2002",
+      "question": "What is the company's Weighted Average Cost of Capital (WACC)? Answer as a percentage to two decimal places.",
+      "context_preview": "A manufacturing company is evaluating its financing strategy and needs to calculate its Weighted Average Cost of Capital (WACC) to optimally structure its capital resources. The company's current mark...",
+      "ground_truth": 6.9,
+      "ground_truth_solution": "def solution():\n    # Define the financial parameters\n    market_value_equity = 150000000  # 150 million\n    market_value_debt = 100000000    # 100 million\n    cost_of_equity = 0.09            # 9%\n    cost_of_debt = 0.05              # 5%\n    tax_rate = 0.25                  # 25%\n\n    # Calculate total market value of the company's capital\n    total_value = market_value_equity + market_value_debt\n\n    # Calculate weights for equity and debt\n    equity_weight = market_value_equity / total_value\n    debt_weight = market_value_debt / total_value\n\n    # Calculate WACC using the formula\n    wacc = (equity_weight * cost_of_equity) + (debt_weight * cost_of_debt * (1 - tax_rate))\n\n    # Return the WACC as a percentage to two decimal places\n    return round(wacc * 100, 2)",
+      "cot": {
+        "answer": null,
+        "correct": false,
+        "steps": [],
+        "metrics": null,
+        "raw_response": "",
+        "cost_usd": 0.0,
+        "time_seconds": 0.0
+      },
+      "pot": {
+        "answer": 6.9,
+        "correct": true,
+        "code": "def solution():\n    # Define the financial parameters\n    market_value_equity = 150000000  # 150 million\n    market_value_debt = 100000000    # 100 million\n    cost_of_equity = 0.09            # 9%\n    cost_of_debt = 0.05              # 5%\n    tax_rate = 0.25                  # 25%\n\n    # Calculate total market value of the company's capital\n    total_value = market_value_equity + market_value_debt\n\n    # Calculate weights for equity and debt\n    equity_weight = market_value_equity / total_value\n    debt_weight = market_value_debt / total_value\n\n    # Calculate WACC using the formula\n    wacc = (equity_weight * cost_of_equity) + (debt_weight * cost_of_debt * (1 - tax_rate))\n\n    # Define the final answer variable with the WACC as a percentage to two decimal places\n    answer = round(wacc * 100, 2)\n\n    # Return the final result\n    return answer",
+        "execution_success": true,
+        "execution_output": 6.9,
+        "metrics": {
+          "final_answer_correct": true,
+          "execution_success": true
+        },
+        "raw_response": "```python\ndef solution():\n    # Define the financial parameters\n    market_value_equity = 150000000  # 150 million\n    market_value_debt = 100000000    # 100 million\n    cost_of_equity = 0.09            # 9%\n    cost_of_debt = 0.05              # 5%\n    tax_rate = 0.25                  # 25%\n\n    # Calculate total market value of the company's capital\n    total_value = market_value_equity + market_value_debt\n\n    # Calculate weights for equity and debt\n    equity_weight = market_value_equity / total_value\n    debt_weight = market_value_debt / total_value\n\n    # Calculate WACC using the formula\n    wacc = (equity_weight * cost_of_equity) + (debt_weight * cost_of_debt * (1 - tax_rate))\n\n    # Define the final answer variable with the WACC as a percentage to two decimal places\n    answer = round(wacc * 100, 2)\n\n    # Return the final result\n    return answer\n```",
+        "cost_usd": 0.00906725,
+        "time_seconds": 2.958872079849243
+      }
+    }
+  ]
+}

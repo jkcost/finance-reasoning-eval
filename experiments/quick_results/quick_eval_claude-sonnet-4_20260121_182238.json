@@ -1,0 +1,198 @@
+{
+  "timestamp": "2026-01-21T18:22:38.499099",
+  "model_id": "claude-sonnet-4",
+  "num_examples": 2,
+  "aggregate_metrics": {
+    "cot_accuracy": 1.0,
+    "pot_accuracy": 1.0,
+    "cot_avg_overall_score": 0.6000000000000001,
+    "pot_avg_overall_score": 1.0,
+    "cot_avg_step_completeness": 0.0,
+    "cot_avg_hallucination_rate": 0.0,
+    "total_cost_usd": 0.05345040000000001,
+    "total_time_seconds": 25.373405933380127
+  },
+  "examples": [
+    {
+      "example_id": "test-2000",
+      "question": "what would the 2012 shares outstanding in millions have been without the acquisition of smith international? Answer to the nearest integer.",
+      "context_preview": "schlumberger limited and subsidiaries shares of common stock ( stated in millions ) issued in treasury shares outstanding .\n\n|  | Issued | In Treasury | Shares Outstanding |\n| :--- | :--- | :--- | :--...",
+      "ground_truth": 1152,
+      "ground_truth_solution": "shares_outstanding = 1328\nacquisition_cost = 176\nshares_sold = 0\noption_exchanged = 0\nemployee_plan = 0\nstock_repurchase = 0\nconversion_debentures = 0\nvesting_restricted_stock = 0\nanswer = shares_outstanding - acquisition_cost - shares_sold - option_exchanged - employee_plan - stock_repurchase - conversion_debentures - vesting_restricted_stock",
+      "cot": {
+        "answer": 1152,
+        "correct": true,
+        "steps": [
+          {
+            "step_number": 1,
+            "step_type": "variable_definition",
+            "description": "Define the actual shares outstanding at the end of 2012",
+            "code_snippet": "shares_outstanding = 1328",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 2,
+            "step_type": "variable_definition",
+            "description": "Define the shares added from Smith International acquisition in 2010",
+            "code_snippet": "acquisition_cost = 176",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 3,
+            "step_type": "variable_definition",
+            "description": "Initialize other variables that don't affect the calculation",
+            "code_snippet": "shares_sold = 0\noption_exchanged = 0\nemployee_plan = 0\nstock_repurchase = 0\nconversion_debentures = 0\nvesting_restricted_stock = 0",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 4,
+            "step_type": "calculation",
+            "description": "Calculate what shares outstanding would have been without the Smith International acquisition by subtracting the 176 million shares that were added in 2010",
+            "code_snippet": "answer = shares_outstanding - acquisition_cost - shares_sold - option_exchanged - employee_plan - stock_repurchase - conversion_debentures - vesting_restricted_stock",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 5,
+            "step_type": "return_result",
+            "description": "Return the final answer of 1152 million shares",
+            "code_snippet": "return answer",
+            "matches_ground_truth": false
+          }
+        ],
+        "metrics": {
+          "final_answer_correct": true,
+          "step_completeness": 0.0,
+          "step_order_score": 0.0,
+          "reasoning_similarity": 0.0,
+          "hallucination_rate": 0.0,
+          "overall_score": 0.6000000000000001
+        },
+        "raw_response": "{\n  \"final_answer\": 1152,\n  \"reasoning_steps\": [\n    {\n      \"step_number\": 1,\n      \"step_type\": \"variable_definition\",\n      \"description\": \"Define the actual shares outstanding at the end of 2012\",\n      \"code_snippet\": \"shares_outstanding = 1328\"\n    },\n    {\n      \"step_number\": 2,\n      \"step_type\": \"variable_definition\",\n      \"description\": \"Define the shares added from Smith International acquisition in 2010\",\n      \"code_snippet\": \"acquisition_cost = 176\"\n    },\n    {\n      \"step_number\": 3,\n      \"step_type\": \"variable_definition\",\n      \"description\": \"Initialize other variables that don't affect the calculation\",\n      \"code_snippet\": \"shares_sold = 0\\noption_exchanged = 0\\nemployee_plan = 0\\nstock_repurchase = 0\\nconversion_debentures = 0\\nvesting_restricted_stock = 0\"\n    },\n    {\n      \"step_number\": 4,\n      \"step_type\": \"calculation\",\n      \"description\": \"Calculate what shares outstanding would have been without the Smith International acquisition by subtracting the 176 million shares that were added in 2010\",\n      \"code_snippet\": \"answer = shares_outstanding - acquisition_cost - shares_sold - option_exchanged - employee_plan - stock_repurchase - conversion_debentures - vesting_restricted_stock\"\n    },\n    {\n      \"step_number\": 5,\n      \"step_type\": \"return_result\",\n      \"description\": \"Return the final answer of 1152 million shares\",\n      \"code_snippet\": \"return answer\"\n    }\n  ]\n}",
+        "cost_usd": 0.015408,
+        "time_seconds": 8.279420137405396
+      },
+      "pot": {
+        "answer": 1152.0,
+        "correct": true,
+        "code": "# Define variables from the table\nshares_outstanding_2012 = 1328  # shares outstanding at end of 2012 in millions\nsmith_acquisition_impact = 176  # impact from Smith International acquisition in millions\n\n# Calculate what 2012 shares outstanding would have been without Smith acquisition\n# We need to subtract the impact of the Smith International acquisition\nanswer = shares_outstanding_2012 - smith_acquisition_impact\n\n# Round to nearest integer as requested\nanswer = round(answer)\n\n# Return final result\nreturn answer",
+        "execution_success": true,
+        "execution_output": 1152.0,
+        "metrics": {
+          "final_answer_correct": true,
+          "execution_success": true
+        },
+        "raw_response": "```python\n# Define variables from the table\nshares_outstanding_2012 = 1328  # shares outstanding at end of 2012 in millions\nsmith_acquisition_impact = 176  # impact from Smith International acquisition in millions\n\n# Calculate what 2012 shares outstanding would have been without Smith acquisition\n# We need to subtract the impact of the Smith International acquisition\nanswer = shares_outstanding_2012 - smith_acquisition_impact\n\n# Round to nearest integer as requested\nanswer = round(answer)\n\n# Return final result\nreturn answer\n```",
+        "cost_usd": 0.011649900000000001,
+        "time_seconds": 3.580533742904663
+      }
+    },
+    {
+      "example_id": "test-2002",
+      "question": "What is the company's Weighted Average Cost of Capital (WACC)? Answer as a percentage to two decimal places.",
+      "context_preview": "A manufacturing company is evaluating its financing strategy and needs to calculate its Weighted Average Cost of Capital (WACC) to optimally structure its capital resources. The company's current mark...",
+      "ground_truth": 6.9,
+      "ground_truth_solution": "def solution():\n    # Define the financial parameters\n    market_value_equity = 150000000  # 150 million\n    market_value_debt = 100000000    # 100 million\n    cost_of_equity = 0.09            # 9%\n    cost_of_debt = 0.05              # 5%\n    tax_rate = 0.25                  # 25%\n\n    # Calculate total market value of the company's capital\n    total_value = market_value_equity + market_value_debt\n\n    # Calculate weights for equity and debt\n    equity_weight = market_value_equity / total_value\n    debt_weight = market_value_debt / total_value\n\n    # Calculate WACC using the formula\n    wacc = (equity_weight * cost_of_equity) + (debt_weight * cost_of_debt * (1 - tax_rate))\n\n    # Return the WACC as a percentage to two decimal places\n    return round(wacc * 100, 2)",
+      "cot": {
+        "answer": 6.9,
+        "correct": true,
+        "steps": [
+          {
+            "step_number": 1,
+            "step_type": "variable_definition",
+            "description": "Define the market value of equity",
+            "code_snippet": "market_value_equity = 150000000",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 2,
+            "step_type": "variable_definition",
+            "description": "Define the market value of debt",
+            "code_snippet": "market_value_debt = 100000000",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 3,
+            "step_type": "variable_definition",
+            "description": "Define the cost of equity as a decimal",
+            "code_snippet": "cost_of_equity = 0.09",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 4,
+            "step_type": "variable_definition",
+            "description": "Define the cost of debt as a decimal",
+            "code_snippet": "cost_of_debt = 0.05",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 5,
+            "step_type": "variable_definition",
+            "description": "Define the corporate tax rate as a decimal",
+            "code_snippet": "tax_rate = 0.25",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 6,
+            "step_type": "calculation",
+            "description": "Calculate the total market value of the company's capital",
+            "code_snippet": "total_value = market_value_equity + market_value_debt",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 7,
+            "step_type": "calculation",
+            "description": "Calculate the weight of equity in the capital structure",
+            "code_snippet": "equity_weight = market_value_equity / total_value",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 8,
+            "step_type": "calculation",
+            "description": "Calculate the weight of debt in the capital structure",
+            "code_snippet": "debt_weight = market_value_debt / total_value",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 9,
+            "step_type": "calculation",
+            "description": "Calculate WACC using the formula: (E/V × Re) + (D/V × Rd × (1-T))",
+            "code_snippet": "wacc = (equity_weight * cost_of_equity) + (debt_weight * cost_of_debt * (1 - tax_rate))",
+            "matches_ground_truth": false
+          },
+          {
+            "step_number": 10,
+            "step_type": "return_result",
+            "description": "Convert WACC to percentage and round to two decimal places",
+            "code_snippet": "return round(wacc * 100, 2)",
+            "matches_ground_truth": false
+          }
+        ],
+        "metrics": {
+          "final_answer_correct": true,
+          "step_completeness": 0.0,
+          "step_order_score": 0.0,
+          "reasoning_similarity": 0.0,
+          "hallucination_rate": 0.0,
+          "overall_score": 0.6000000000000001
+        },
+        "raw_response": "{\n  \"final_answer\": 6.9,\n  \"reasoning_steps\": [\n    {\n      \"step_number\": 1,\n      \"step_type\": \"variable_definition\",\n      \"description\": \"Define the market value of equity\",\n      \"code_snippet\": \"market_value_equity = 150000000\"\n    },\n    {\n      \"step_number\": 2,\n      \"step_type\": \"variable_definition\",\n      \"description\": \"Define the market value of debt\",\n      \"code_snippet\": \"market_value_debt = 100000000\"\n    },\n    {\n      \"step_number\": 3,\n      \"step_type\": \"variable_definition\",\n      \"description\": \"Define the cost of equity as a decimal\",\n      \"code_snippet\": \"cost_of_equity = 0.09\"\n    },\n    {\n      \"step_number\": 4,\n      \"step_type\": \"variable_definition\",\n      \"description\": \"Define the cost of debt as a decimal\",\n      \"code_snippet\": \"cost_of_debt = 0.05\"\n    },\n    {\n      \"step_number\": 5,\n      \"step_type\": \"variable_definition\",\n      \"description\": \"Define the corporate tax rate as a decimal\",\n      \"code_snippet\": \"tax_rate = 0.25\"\n    },\n    {\n      \"step_number\": 6,\n      \"step_type\": \"calculation\",\n      \"description\": \"Calculate the total market value of the company's capital\",\n      \"code_snippet\": \"total_value = market_value_equity + market_value_debt\"\n    },\n    {\n      \"step_number\": 7,\n      \"step_type\": \"calculation\",\n      \"description\": \"Calculate the weight of equity in the capital structure\",\n      \"code_snippet\": \"equity_weight = market_value_equity / total_value\"\n    },\n    {\n      \"step_number\": 8,\n      \"step_type\": \"calculation\",\n      \"description\": \"Calculate the weight of debt in the capital structure\",\n      \"code_snippet\": \"debt_weight = market_value_debt / total_value\"\n    },\n    {\n      \"step_number\": 9,\n      \"step_type\": \"calculation\",\n      \"description\": \"Calculate WACC using the formula: (E/V × Re) + (D/V × Rd × (1-T))\",\n      \"code_snippet\": \"wacc = (equity_weight * cost_of_equity) + (debt_weight * cost_of_debt * (1 - tax_rate))\"\n    },\n    {\n      \"step_number\": 10,\n      \"step_type\": \"return_result\",\n      \"description\": \"Convert WACC to percentage and round to two decimal places\",\n      \"code_snippet\": \"return round(wacc * 100, 2)\"\n    }\n  ]\n}",
+        "cost_usd": 0.015133800000000003,
+        "time_seconds": 8.123645305633545
+      },
+      "pot": {
+        "answer": 6.9,
+        "correct": true,
+        "code": "# Define the financial parameters\nmarket_value_equity = 150000000  # Market value of equity: 150 million\nmarket_value_debt = 100000000    # Market value of debt: 100 million\ncost_of_equity = 0.09            # Cost of equity: 9%\ncost_of_debt = 0.05              # Cost of debt: 5%\ntax_rate = 0.25                  # Corporate tax rate: 25%\n\n# Calculate total market value of the company's capital\ntotal_value = market_value_equity + market_value_debt\n\n# Calculate weights for equity and debt in the capital structure\nequity_weight = market_value_equity / total_value\ndebt_weight = market_value_debt / total_value\n\n# Calculate after-tax cost of debt\nafter_tax_cost_of_debt = cost_of_debt * (1 - tax_rate)\n\n# Calculate WACC using the weighted average formula\n# WACC = (E/V × Re) + (D/V × Rd × (1-T))\n# Where: E = Market value of equity, D = Market value of debt, V = Total value\n#        Re = Cost of equity, Rd = Cost of debt, T = Tax rate\nwacc = (equity_weight * cost_of_equity) + (debt_weight * after_tax_cost_of_debt)\n\n# Convert to percentage and round to two decimal places\nanswer = round(wacc * 100, 2)\n\nreturn answer",
+        "execution_success": true,
+        "execution_output": 6.9,
+        "metrics": {
+          "final_answer_correct": true,
+          "execution_success": true
+        },
+        "raw_response": "```python\n# Define the financial parameters\nmarket_value_equity = 150000000  # Market value of equity: 150 million\nmarket_value_debt = 100000000    # Market value of debt: 100 million\ncost_of_equity = 0.09            # Cost of equity: 9%\ncost_of_debt = 0.05              # Cost of debt: 5%\ntax_rate = 0.25                  # Corporate tax rate: 25%\n\n# Calculate total market value of the company's capital\ntotal_value = market_value_equity + market_value_debt\n\n# Calculate weights for equity and debt in the capital structure\nequity_weight = market_value_equity / total_value\ndebt_weight = market_value_debt / total_value\n\n# Calculate after-tax cost of debt\nafter_tax_cost_of_debt = cost_of_debt * (1 - tax_rate)\n\n# Calculate WACC using the weighted average formula\n# WACC = (E/V × Re) + (D/V × Rd × (1-T))\n# Where: E = Market value of equity, D = Market value of debt, V = Total value\n#        Re = Cost of equity, Rd = Cost of debt, T = Tax rate\nwacc = (equity_weight * cost_of_equity) + (debt_weight * after_tax_cost_of_debt)\n\n# Convert to percentage and round to two decimal places\nanswer = round(wacc * 100, 2)\n\nreturn answer\n```",
+        "cost_usd": 0.0112587,
+        "time_seconds": 5.389806747436523
+      }
+    }
+  ]
+}

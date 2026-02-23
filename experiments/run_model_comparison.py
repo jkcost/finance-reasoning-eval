@@ -381,18 +381,28 @@ class ModelComparisonExperiment:
                 error_confidence = classification.confidence
                 error_evidence = classification.evidence if hasattr(classification, 'evidence') else ""
 
-                # LLM-based deep analysis for unknown/complex errors
-                if self.llm_analyzer and error_category in ["unknown", "calculation_error"]:
+                # LLM-based deep analysis for ALL incorrect answers
+                # 모든 오답에 대해 상세 분석 수행 (execution_error 포함)
+                if self.llm_analyzer:
                     try:
+                        # execution_error인 경우 실행 오류 정보도 포함
+                        analysis_context = example.get("context", "")
+                        if execution_error:
+                            analysis_context += f"\n\n[실행 오류 정보]: {execution_error}"
+                            if executed_code:
+                                analysis_context += f"\n[실행된 코드]:\n{executed_code}"
+
                         llm_analysis = self.llm_analyzer.analyze(
                             question=example.get("question", ""),
-                            context=example.get("context", ""),
+                            context=analysis_context,
                             ground_truth=example.get("ground_truth"),
                             predicted_answer=final_answer,
                             raw_response=raw_response,
                         )
                         if llm_analysis:
-                            error_category = llm_analysis.error_type.lower()
+                            # execution_error는 유지하고, 나머지는 LLM 분석 결과로 대체
+                            if error_category != "execution_error":
+                                error_category = llm_analysis.error_type.lower()
                             error_confidence = llm_analysis.confidence
                             error_evidence = (
                                 f"[{llm_analysis.error_type}] {llm_analysis.summary}\n\n"
@@ -402,6 +412,9 @@ class ModelComparisonExperiment:
                             )
                     except Exception as llm_err:
                         print(f"    [LLM Analysis Error] {llm_err}")
+                        # LLM 분석 실패 시 기본 메시지 유지
+                        if not error_evidence:
+                            error_evidence = f"분석 실패: {str(llm_err)}"
 
             return ComparisonResult(
                 example_id=example.get("question_id", "unknown"),

@@ -1,0 +1,167 @@
+{
+  "timestamp": "2026-01-21T18:12:09.727643",
+  "model_id": "gpt-5-2025-08-07",
+  "num_examples": 5,
+  "aggregate_metrics": {
+    "cot_accuracy": 0.0,
+    "pot_accuracy": 0.0,
+    "cot_avg_overall_score": 0,
+    "pot_avg_overall_score": 0.0,
+    "cot_avg_step_completeness": 0,
+    "cot_avg_hallucination_rate": 0,
+    "total_cost_usd": 0.30652050000000003,
+    "total_time_seconds": 3.5499744415283203
+  },
+  "examples": [
+    {
+      "example_id": "test-2000",
+      "question": "what would the 2012 shares outstanding in millions have been without the acquisition of smith international? Answer to the nearest integer.",
+      "context_preview": "schlumberger limited and subsidiaries shares of common stock ( stated in millions ) issued in treasury shares outstanding .\n\n|  | Issued | In Treasury | Shares Outstanding |\n| :--- | :--- | :--- | :--...",
+      "ground_truth": 1152,
+      "ground_truth_solution": "shares_outstanding = 1328\nacquisition_cost = 176\nshares_sold = 0\noption_exchanged = 0\nemployee_plan = 0\nstock_repurchase = 0\nconversion_debentures = 0\nvesting_restricted_stock = 0\nanswer = shares_outstanding - acquisition_cost - shares_sold - option_exchanged - employee_plan - stock_repurchase - conversion_debentures - vesting_restricted_stock",
+      "cot": {
+        "answer": null,
+        "correct": false,
+        "steps": [],
+        "metrics": null,
+        "raw_response": "",
+        "cost_usd": 0.0,
+        "time_seconds": 0.0
+      },
+      "pot": {
+        "answer": null,
+        "correct": false,
+        "code": "",
+        "execution_success": false,
+        "execution_output": null,
+        "metrics": {
+          "final_answer_correct": false,
+          "execution_success": false
+        },
+        "raw_response": "",
+        "cost_usd": 0.0563745,
+        "time_seconds": 1.1513824462890625
+      }
+    },
+    {
+      "example_id": "test-2002",
+      "question": "What is the company's Weighted Average Cost of Capital (WACC)? Answer as a percentage to two decimal places.",
+      "context_preview": "A manufacturing company is evaluating its financing strategy and needs to calculate its Weighted Average Cost of Capital (WACC) to optimally structure its capital resources. The company's current mark...",
+      "ground_truth": 6.9,
+      "ground_truth_solution": "def solution():\n    # Define the financial parameters\n    market_value_equity = 150000000  # 150 million\n    market_value_debt = 100000000    # 100 million\n    cost_of_equity = 0.09            # 9%\n    cost_of_debt = 0.05              # 5%\n    tax_rate = 0.25                  # 25%\n\n    # Calculate total market value of the company's capital\n    total_value = market_value_equity + market_value_debt\n\n    # Calculate weights for equity and debt\n    equity_weight = market_value_equity / total_value\n    debt_weight = market_value_debt / total_value\n\n    # Calculate WACC using the formula\n    wacc = (equity_weight * cost_of_equity) + (debt_weight * cost_of_debt * (1 - tax_rate))\n\n    # Return the WACC as a percentage to two decimal places\n    return round(wacc * 100, 2)",
+      "cot": {
+        "answer": null,
+        "correct": false,
+        "steps": [],
+        "metrics": null,
+        "raw_response": "",
+        "cost_usd": 0.0,
+        "time_seconds": 0.0
+      },
+      "pot": {
+        "answer": null,
+        "correct": false,
+        "code": "",
+        "execution_success": false,
+        "execution_output": null,
+        "metrics": {
+          "final_answer_correct": false,
+          "execution_success": false
+        },
+        "raw_response": "",
+        "cost_usd": 0.0509535,
+        "time_seconds": 1.0509066581726074
+      }
+    },
+    {
+      "example_id": "test-2005",
+      "question": "If a security has a yearly adjusted period of 7.020 and an annual convexity of 65.180 and its return to maturity falls by 25 basis points, what is the anticipated percentage change in price (expressed as a percentage)? Answer to three decimal places.",
+      "context_preview": "[]",
+      "ground_truth": 1.775,
+      "ground_truth_solution": "def solution():\n    ann_mod_dur = 7.020\n    ann_converxity = 65.180\n    delta_yield = -0.0025\n\n    price_change = (-ann_mod_dur * delta_yield) + (0.5 * ann_converxity * (delta_yield ** 2))\n    return price_change * 100  # convert to percentage",
+      "cot": {
+        "answer": null,
+        "correct": false,
+        "steps": [],
+        "metrics": null,
+        "raw_response": "",
+        "cost_usd": 0.0,
+        "time_seconds": 0.0
+      },
+      "pot": {
+        "answer": null,
+        "correct": false,
+        "code": "",
+        "execution_success": false,
+        "execution_output": null,
+        "metrics": {
+          "final_answer_correct": false,
+          "execution_success": false
+        },
+        "raw_response": "",
+        "cost_usd": 0.03400800000000001,
+        "time_seconds": 0.2494361400604248
+      }
+    },
+    {
+      "example_id": "test-2036",
+      "question": "Lemon owned 2000 shares of Spectrol Corp. common stock that were purchased in year 1 at $10.50 per share. In year 4 Lemon received a 5% non-taxable dividend of Spectrol common stock. In year 5 the stock split 2-for-1. In the current year Lemon sold 800 shares. What is Lemon's basis in the 800 shares of stock sold? Answer to the closest dollar.",
+      "context_preview": "",
+      "ground_truth": 4000,
+      "ground_truth_solution": "shares = 2000.0\npurchase_price = 10.50\ndividend = 0.05\nshares_sold = 800\ncommon_stock = shares * purchase_price\nprice_per_share = common_stock / (2000 * (1.0 + dividend)) \nprice_per_split_share = price_per_share / 2.0\nbasis = shares_sold * price_per_split_share\nround(basis)",
+      "cot": {
+        "answer": null,
+        "correct": false,
+        "steps": [],
+        "metrics": null,
+        "raw_response": "",
+        "cost_usd": 0.0,
+        "time_seconds": 0.0
+      },
+      "pot": {
+        "answer": null,
+        "correct": false,
+        "code": "",
+        "execution_success": false,
+        "execution_output": null,
+        "metrics": {
+          "final_answer_correct": false,
+          "execution_success": false
+        },
+        "raw_response": "",
+        "cost_usd": 0.03642600000000001,
+        "time_seconds": 0.8444757461547852
+      }
+    },
+    {
+      "example_id": "test-2039",
+      "question": "the specific reserves in the alll as of december 31 , 2012 were what percent of the tdr portfolio? Answer to three decimal places.",
+      "context_preview": "troubled debt restructurings ( tdrs ) a tdr is a loan whose terms have been restructured in a manner that grants a concession to a borrower experiencing financial difficulties . tdrs typically result ...",
+      "ground_truth": 20.532,
+      "ground_truth_solution": "specific_reserves_2012 = 587\nspecific_reserves_2011 = 580\ntotal_specific_reserves = specific_reserves_2012 + specific_reserves_2011\ntotal_tdr_portfolio = 2859\nnonperforming_loans = 1589\naccruing_loans = 1037\ncredit_card_loans = 233\ntotal_tdrs = total_tdr_portfolio\nnonperforming_loans_percent = nonperforming_loans / total_tdrs\naccruing_loans_percent = accruing_loans / total_tdrs\ncredit_card_loans_percent = credit_card_loans / total_tdrs\nanswer = specific_reserves_2012 / total_tdr_portfolio * 100",
+      "cot": {
+        "answer": null,
+        "correct": false,
+        "steps": [],
+        "metrics": null,
+        "raw_response": "",
+        "cost_usd": 0.0,
+        "time_seconds": 0.0
+      },
+      "pot": {
+        "answer": null,
+        "correct": false,
+        "code": "",
+        "execution_success": false,
+        "execution_output": null,
+        "metrics": {
+          "final_answer_correct": false,
+          "execution_success": false
+        },
+        "raw_response": "",
+        "cost_usd": 0.1287585,
+        "time_seconds": 0.25377345085144043
+      }
+    }
+  ]
+}

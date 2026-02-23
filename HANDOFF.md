@@ -1,106 +1,108 @@
 # HANDOFF - 세션 인계 문서
 
-**마지막 업데이트**: 2026-02-05
-**현재 상태**: 모델 비교 실험 프레임워크 완성
+**마지막 업데이트**: 2026-02-19
+**현재 상태**: Metacognitive Evaluation 연구 - Phase A/B 완료, Phase C/D 대기
+
+---
+
+## 연구 개요
+
+**제목**: "Do Financial LLMs Know What They Don't Know? Metacognitive Evaluation via Controlled Information Manipulation"
+
+**핵심 아이디어**: FinanceReasoning(ACL 2025)의 금융 문제를 5가지 방식으로 변환하여 unsolvable하게 만든 뒤, LLM이 정보 부족을 자발적으로 인식(거부)하는지 측정
 
 ---
 
 ## 이번 세션에서 완료한 작업
 
-### 1. 모델 비교 결과 상세화 (핵심 작업)
+### 1. 메타인지 평가 프레임워크 구축 (신규 4파일 + 기존 2파일 수정)
 
-#### 문제점
-- 기존: 결과가 요약 통계만 표시, 모델이 왜 틀렸는지 알 수 없음
-- `error_category`가 대부분 "unknown"으로 분류됨
+| 파일 | 역할 |
+|------|------|
+| `evaluation/metacognitive_metrics.py` | MetacognitiveResult 데이터클래스, MC Score 계산 |
+| `evaluation/refusal_detector.py` | 응답 분류 (refused/caveat/confident/error), 패턴 매칭 |
+| `experiments/run_metacognitive_experiment.py` | 메인 실험 (Phase A~D), 3가지 프롬프트 전략 |
+| `experiments/generate_metacognitive_dashboard.py` | HTML 대시보드 + 상세 케이스 분석 |
+| `experiments/apply_transformations_full.py` | Type 4/5 변환 추가, validate_transformation() |
+| `evaluation/error_analysis/error_taxonomy.py` | METACOGNITIVE_REFUSAL/CAVEAT 카테고리 추가 |
 
-#### 해결책
-1. **ComparisonResult 데이터 구조 확장** (`experiments/run_model_comparison.py:83-107`)
-   - `context`: 문제 맥락 저장
-   - `raw_response`: 모델 전체 응답 저장
-   - `executed_code`: POT 실행 코드 저장
-   - `error_evidence`: 오답 분석 상세 설명
+### 2. Phase A/B 실험 실행 (economic, n=5, hard)
 
-2. **LLM 기반 오답 분석기** (`evaluation/error_analysis/llm_error_analyzer.py`)
-   - gpt-4o-mini로 오답 원인 분석
-   - **한글로 출력** (사용자 요청)
-   - 구조화된 분석: 요약, 상세분석, 원인, 올바른 풀이
+**Phase A 결과** (Baseline):
+| 모델 | 정답률 |
+|------|--------|
+| gemini-2.5-flash | 3/5 (60%) |
+| gpt-4o-mini | 2/5 (40%) |
+| claude-haiku-4 | 1/5 (20%) |
 
-3. **HTML 리포트 대폭 개선** (`run_model_comparison.py:550-920`)
-   - 문제별 상세 분석 섹션 추가
-   - 에러 유형별 아이콘/색상 (🔢수식, 🤔이해, 🧮계산, 📊추출, 📏단위)
-   - 답변 비교 시각화 (예측값 → 정답)
-   - 접기/펼치기 상세 패널
-   - 필터링 (전체/오답/Easy/Medium/Hard)
-   - 코드 하이라이팅 (Highlight.js)
+**Phase B 결과** (Metacognitive, 6개 유효 변환):
+| 모델 | Refusal Acc | False Conf | MC Score |
+|------|-------------|------------|----------|
+| claude-haiku-4 | 66.7% | 16.7% | 0.817 |
+| gpt-4o-mini | 66.7% | 33.3% | 0.767 |
+| gemini-2.5-flash | 66.7% | 33.3% | 0.767 |
 
-4. **select_examples 함수 수정** (`run_model_comparison.py:127-144`)
-   - n개 샘플을 균등 간격으로 선택하도록 수정
-   - `--n 10` 옵션이 제대로 작동
+### 3. Type 5 변환 수정 (핵심 수정)
+
+**문제**: 기존 Type 5는 context 끝에 `[Note: ...]` 추가 → 모델이 무시
+**수정**: context 본문 내부에 모순 문장 삽입 (예: "However, according to the audited financial statements, the revenue was $37,500, not $25,000.")
+**결과**: 수정 후에도 **전 모델 실패** → 모순 탐지가 누락 탐지보다 훨씬 어려운 과제임을 확인
+
+### 4. 대시보드 상세 케이스 뷰 추가
+
+- 원본 vs 변환된 context 나란히 비교
+- 모델별 응답 + 색상 코딩 (거부=녹색, 확신=빨간색, 경고=노란색)
+- 변환 설명, 정답, hallucinated values 표시
 
 ---
 
-## 수정된 파일 목록
+## 핵심 발견
 
-| 파일 | 변경 내용 |
-|------|----------|
-| `experiments/run_model_comparison.py` | ComparisonResult 확장, HTML 리포트 개선, LLM 분석 통합 |
-| `evaluation/error_analysis/llm_error_analyzer.py` | **새 파일** - LLM 기반 한글 오답 분석 |
-| `evaluation/error_analysis/__init__.py` | LLM 분석기 export 추가 |
+1. **Type 1/4 (정보 제거)**: metacognitive 프롬프트 사용 시 모든 모델이 잘 탐지
+2. **Type 5 (모순 정보)**: **전 모델 실패** — "audited financial statements"라는 권위 표현을 보면 새 값을 무조건 채택, 모순 자체를 인식 못함
+3. 모순 탐지 >> 누락 탐지 난이도 (메타인지 측면)
 
 ---
 
-## 실행 방법
+## 결과 파일 위치
 
-```bash
-# 기본 실행 (난이도별 3문제)
-python experiments/run_model_comparison.py
-
-# 확장 실행 (난이도별 10문제, 총 30문제)
-python experiments/run_model_comparison.py --n 10
-
-# LLM 분석 없이 실행 (비용 절감)
-python experiments/run_model_comparison.py --no-llm-analysis
-
-# 특정 모델만 테스트
-python experiments/run_model_comparison.py --models gpt-4o-mini,gemini-2.5-flash
+```
+experiments/results/metacognitive/
+├── phase_A_20260219_172158.json          # Baseline 결과
+├── phase_B_metacognitive_20260219_172514.json  # MC 테스트 결과
+└── dashboard.html                        # 시각화 대시보드
 ```
 
 ---
 
-## 최신 실험 결과
+## 다음 작업 (우선순위 순)
 
-**파일 위치**: `experiments/results/model_comparison/model_comparison_20260205_223938.*`
+### 즉시 실행 가능
+1. **balanced 모델셋 실행** — gpt-4o, claude-sonnet-4, gemini-2.5-pro에서 Type 5 결과 확인
+   ```bash
+   python experiments/run_metacognitive_experiment.py --phase A --budget balanced --n 5 --level hard
+   python experiments/run_metacognitive_experiment.py --phase B --budget balanced --n 5 --prompt-strategy metacognitive
+   ```
 
-### 성능 (30문제 x 3모델 = 90개 평가)
-| 모델 | 정답 | 정확도 | 비용 |
-|------|------|--------|------|
-| gemini-2.5-flash | 24/30 | 80.0% | $0.003 |
-| gpt-4o-mini | 23/30 | 76.7% | $0.005 |
-| claude-haiku-4 | 12/30 | 40.0% | $0.015 |
+2. **프롬프트 전략 비교** — standard vs metacognitive vs self_verification
+   ```bash
+   python experiments/run_metacognitive_experiment.py --phase B --budget economic --n 5 --prompt-strategy all
+   ```
 
-### 에러 유형 분포
-- execution_error: 19건 (주로 claude-haiku-4)
-- extraction_error: 4건
-- numerical_calculation_error: 4건
-- formula_error: 3건
-- logic_error: 1건
+3. **n 확대** — n=10~20으로 통계적 신뢰도 확보
 
----
-
-## 다음 작업 제안
-
-1. **추론 모델 비교**: gpt-o1, claude-opus-4, gemini-2.5-pro 테스트
-2. **COT vs POT 비교**: `--methods COT,POT` 옵션으로 비교
-3. **RAG 통합**: `evaluation/rag_enhancer.py` 활용
-4. **더 많은 샘플**: `--n 50` 또는 전체 데이터셋 평가
+### 추후 작업
+4. **Phase C: RAG 영향** — 금융 함수 파라미터 정의가 누락 데이터 인식에 도움 되는지
+5. **Type 5 개선 실험** — 모순 탐지를 위한 별도 프롬프트 전략 설계
+6. **validate_transformation() 개선** — python_solution이 context와 독립적으로 하드코딩된 값 사용하는 문제
 
 ---
 
-## 주의사항
+## 알려진 이슈
 
-1. **API 비용**: LLM 오답 분석 활성화 시 추가 비용 발생 (gpt-4o-mini)
-2. **Rate Limit**: Gemini API 429 에러 발생 시 잠시 대기 후 재시도
-3. **한글 인코딩**: 콘솔 출력이 깨질 수 있으나 HTML/JSON은 정상
+1. **Claude Haiku 529 overloaded**: 간헐적 발생, 재시도하면 복구
+2. **validate_transformation() 한계**: test-2000 등 python_solution이 하드코딩된 값 사용 → 모든 변환이 still_solvable로 판정
+3. **Type 5 text 변환**: 모순 문장이 context 내부에 삽입되지만 모든 모델이 탐지 실패
 
 ---
 
@@ -109,11 +111,33 @@ python experiments/run_model_comparison.py --models gpt-4o-mini,gemini-2.5-flash
 ```bash
 # 1. 환경 확인
 cd C:\Users\fanding\PycharmProjects\finance_LLM
-cat .env  # API 키 확인
 
-# 2. 간단한 테스트
-python experiments/run_model_comparison.py --n 2
+# 2. 기존 결과 확인
+# experiments/results/metacognitive/dashboard.html 열기
 
-# 3. 결과 확인
-# experiments/results/model_comparison/ 폴더의 최신 HTML 파일 열기
+# 3. 이어서 실험 (예: balanced 모델셋)
+python experiments/run_metacognitive_experiment.py --phase A --budget balanced --n 5 --level hard
+python experiments/run_metacognitive_experiment.py --phase B --budget balanced --n 5 --prompt-strategy metacognitive
+
+# 4. 대시보드 재생성
+python experiments/generate_metacognitive_dashboard.py --results-dir experiments/results/metacognitive/
 ```
+
+---
+
+## 연구 질문 (참고)
+
+| RQ | 질문 | 핵심 지표 |
+|----|------|-----------|
+| RQ1 | LLM이 금융 문제의 정보 부족을 탐지할 수 있는가? | Refusal Accuracy |
+| RQ2 | 모델 크기/유형이 메타인지 능력에 어떤 영향을 미치는가? | MC Score by Model Type |
+| RQ3 | RAG가 메타인지를 개선하는가? | RAG vs No-RAG Delta |
+| RQ4 | 비용-성능 최적 전략은? | MC Score / Cost |
+
+---
+
+## 메트릭 공식
+
+- **Refusal Accuracy** = 정확히 거부한 unsolvable 문제 / 전체 unsolvable
+- **False Confidence Rate** = 확신있게 답한 unsolvable 문제 / 전체 unsolvable
+- **MC Score** = 0.4 x RefusalAcc + 0.3 x (1-FalseConf) + 0.3 x (1-HalluRate)

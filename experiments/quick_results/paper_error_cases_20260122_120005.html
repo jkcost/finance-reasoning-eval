@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper Error Cases Results - 20260122_120005</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { 
+            text-align: center; 
+            margin-bottom: 30px; 
+            color: #00d4ff;
+            font-size: 2.5em;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .chart-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        .chart-title {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        th, td { 
+            padding: 12px 15px; 
+            text-align: left; 
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        th { 
+            background: rgba(0,212,255,0.2); 
+            color: #00d4ff;
+            font-weight: 600;
+        }
+        tr:hover { background: rgba(255,255,255,0.05); }
+        .correct { color: #4ade80; }
+        .incorrect { color: #f87171; }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+        .badge-table { background: rgba(0,212,255,0.2); color: #00d4ff; }
+        .badge-error { background: rgba(248,113,113,0.2); color: #f87171; }
+        .badge-level { background: rgba(74,222,128,0.2); color: #4ade80; }
+        .example-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .example-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .example-title {
+            font-size: 1.1em;
+            color: #00d4ff;
+        }
+        .question-text {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Paper Error Cases Experiment</h1>
+        <p class="subtitle">Testing specific error cases from FinanceReasoning paper Appendix B (Table 6-14)</p>
+        
+        <div class="charts-grid">
+            <div class="chart-container">
+                <div class="chart-title">Accuracy by Model (POT)</div>
+                <canvas id="accuracyChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">Accuracy by Error Type</div>
+                <canvas id="errorTypeChart"></canvas>
+            </div>
+        </div>
+        
+        <h2 style="color: #00d4ff; margin-bottom: 20px;">Summary by Model</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Method</th>
+                    <th>Correct</th>
+                    <th>Total</th>
+                    <th>Accuracy</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td>claude-3-haiku</td>
+                    <td>COT</td>
+                    <td>3</td>
+                    <td>7</td>
+                    <td class="incorrect">42.9%</td>
+                </tr>
+
+                <tr>
+                    <td>claude-3-haiku</td>
+                    <td>POT</td>
+                    <td>4</td>
+                    <td>7</td>
+                    <td class="correct">57.1%</td>
+                </tr>
+
+                <tr>
+                    <td>claude-sonnet-4</td>
+                    <td>COT</td>
+                    <td>4</td>
+                    <td>7</td>
+                    <td class="correct">57.1%</td>
+                </tr>
+
+                <tr>
+                    <td>claude-sonnet-4</td>
+                    <td>POT</td>
+                    <td>5</td>
+                    <td>7</td>
+                    <td class="correct">71.4%</td>
+                </tr>
+
+                <tr>
+                    <td>gemini-2.0-flash-lite</td>
+                    <td>COT</td>
+                    <td>5</td>
+                    <td>7</td>
+                    <td class="correct">71.4%</td>
+                </tr>
+
+                <tr>
+                    <td>gemini-2.0-flash-lite</td>
+                    <td>POT</td>
+                    <td>4</td>
+                    <td>7</td>
+                    <td class="correct">57.1%</td>
+                </tr>
+
+                <tr>
+                    <td>gemini-2.0-flash</td>
+                    <td>COT</td>
+                    <td>4</td>
+                    <td>7</td>
+                    <td class="correct">57.1%</td>
+                </tr>
+
+                <tr>
+                    <td>gemini-2.0-flash</td>
+                    <td>POT</td>
+                    <td>2</td>
+                    <td>7</td>
+                    <td class="incorrect">28.6%</td>
+                </tr>
+
+                <tr>
+                    <td>gpt-4o-mini</td>
+                    <td>COT</td>
+                    <td>4</td>
+                    <td>7</td>
+                    <td class="correct">57.1%</td>
+                </tr>
+
+                <tr>
+                    <td>gpt-4o-mini</td>
+                    <td>POT</td>
+                    <td>5</td>
+                    <td>7</td>
+                    <td class="correct">71.4%</td>
+                </tr>
+
+                <tr>
+                    <td>gpt-4o</td>
+                    <td>COT</td>
+                    <td>4</td>
+                    <td>7</td>
+                    <td class="correct">57.1%</td>
+                </tr>
+
+                <tr>
+                    <td>gpt-4o</td>
+                    <td>POT</td>
+                    <td>4</td>
+                    <td>7</td>
+                    <td class="correct">57.1%</td>
+                </tr>
+
+            </tbody>
+        </table>
+        
+        <h2 style="color: #00d4ff; margin-bottom: 20px;">Results by Paper Table</h2>
+
+        <div class="example-card">
+            <div class="example-header">
+                <span class="example-title">test-2164</span>
+                <div>
+                    <span class="badge badge-table">Table 6</span>
+                    <span class="badge badge-error">Misunderstanding of Problem</span>
+                    <span class="badge badge-level">hard</span>
+                </div>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <strong>Ground Truth:</strong> 854.466 | 
+                <strong>Score:</strong> <span class="incorrect">5/12</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Method</th>
+                        <th>Answer</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>COT</td>
+                        <td>851.084</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>POT</td>
+                        <td>854.466</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>COT</td>
+                        <td>855.458</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>POT</td>
+                        <td>730.014</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>COT</td>
+                        <td>858.726</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>POT</td>
+                        <td>851.893</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>COT</td>
+                        <td>851.064</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>POT</td>
+                        <td>854.175</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>COT</td>
+                        <td>851.589</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>POT</td>
+                        <td>851.023</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>COT</td>
+                        <td>854.175</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>POT</td>
+                        <td>854.175</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div class="example-card">
+            <div class="example-header">
+                <span class="example-title">test-2162</span>
+                <div>
+                    <span class="badge badge-table">Table 7</span>
+                    <span class="badge badge-error">Formula Application Error</span>
+                    <span class="badge badge-level">hard</span>
+                </div>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <strong>Ground Truth:</strong> 0.853 | 
+                <strong>Score:</strong> <span class="incorrect">0/12</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Method</th>
+                        <th>Answer</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>COT</td>
+                        <td>1.534</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>POT</td>
+                        <td>1.537</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>COT</td>
+                        <td>1.537</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>POT</td>
+                        <td>1.537</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>COT</td>
+                        <td>2.1</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>POT</td>
+                        <td>None</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>COT</td>
+                        <td>1.537</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>POT</td>
+                        <td>1.5372832369942195</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>COT</td>
+                        <td>2.098</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>POT</td>
+                        <td>2.231</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>COT</td>
+                        <td>1.537</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>POT</td>
+                        <td>1.537</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div class="example-card">
+            <div class="example-header">
+                <span class="example-title">test-2017</span>
+                <div>
+                    <span class="badge badge-table">Table 8</span>
+                    <span class="badge badge-error">Numerical Extraction Error</span>
+                    <span class="badge badge-level">hard</span>
+                </div>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <strong>Ground Truth:</strong> 4200 | 
+                <strong>Score:</strong> <span class="incorrect">5/12</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Method</th>
+                        <th>Answer</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>COT</td>
+                        <td>4200.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>POT</td>
+                        <td>4200</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>COT</td>
+                        <td>4.0</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>POT</td>
+                        <td>3000</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>COT</td>
+                        <td>200.0</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>POT</td>
+                        <td>4200</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>COT</td>
+                        <td>3000.0</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>POT</td>
+                        <td>3000</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>COT</td>
+                        <td>4200.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>POT</td>
+                        <td>4200</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>COT</td>
+                        <td>3000.0</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>POT</td>
+                        <td>1412</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div class="example-card">
+            <div class="example-header">
+                <span class="example-title">test-2208</span>
+                <div>
+                    <span class="badge badge-table">Table 9</span>
+                    <span class="badge badge-error">Numerical Calculation Error</span>
+                    <span class="badge badge-level">hard</span>
+                </div>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <strong>Ground Truth:</strong> 5.46 | 
+                <strong>Score:</strong> <span class="incorrect">4/12</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Method</th>
+                        <th>Answer</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>COT</td>
+                        <td>5.49</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>POT</td>
+                        <td>None</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>COT</td>
+                        <td>5.58</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>POT</td>
+                        <td>5.46</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>COT</td>
+                        <td>4.87</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>POT</td>
+                        <td>None</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>COT</td>
+                        <td>5.47</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>POT</td>
+                        <td>5.46</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>COT</td>
+                        <td>5.46</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>POT</td>
+                        <td>None</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>COT</td>
+                        <td>5.49</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>POT</td>
+                        <td>None</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div class="example-card">
+            <div class="example-header">
+                <span class="example-title">test-114</span>
+                <div>
+                    <span class="badge badge-table">Table 10</span>
+                    <span class="badge badge-error">Unsolvable Problem</span>
+                    <span class="badge badge-level">easy</span>
+                </div>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <strong>Ground Truth:</strong> 91 | 
+                <strong>Score:</strong> <span class="correct">11/12</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Method</th>
+                        <th>Answer</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>COT</td>
+                        <td>91.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>POT</td>
+                        <td>91</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>COT</td>
+                        <td>91.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>POT</td>
+                        <td>91</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>COT</td>
+                        <td>91.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>POT</td>
+                        <td>91</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>COT</td>
+                        <td>91.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>POT</td>
+                        <td>91</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>COT</td>
+                        <td>91.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>POT</td>
+                        <td>91</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>COT</td>
+                        <td>91.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>POT</td>
+                        <td>None</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div class="example-card">
+            <div class="example-header">
+                <span class="example-title">test-142</span>
+                <div>
+                    <span class="badge badge-table">Table 11</span>
+                    <span class="badge badge-error">Ambiguous Statement</span>
+                    <span class="badge badge-level">easy</span>
+                </div>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <strong>Ground Truth:</strong> 3.5 | 
+                <strong>Score:</strong> <span class="correct">12/12</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Method</th>
+                        <th>Answer</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>COT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>POT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>COT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>POT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>COT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>POT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>COT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>POT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>COT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>POT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>COT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>POT</td>
+                        <td>3.5</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div class="example-card">
+            <div class="example-header">
+                <span class="example-title">test-8</span>
+                <div>
+                    <span class="badge badge-table">Table 13</span>
+                    <span class="badge badge-error">Incorrect Answer</span>
+                    <span class="badge badge-level">easy</span>
+                </div>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <strong>Ground Truth:</strong> 10 | 
+                <strong>Score:</strong> <span class="correct">11/12</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Method</th>
+                        <th>Answer</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>COT</td>
+                        <td>10.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o-mini</td>
+                        <td>POT</td>
+                        <td>10</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>COT</td>
+                        <td>10.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gpt-4o</td>
+                        <td>POT</td>
+                        <td>10</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>COT</td>
+                        <td>10.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-3-haiku</td>
+                        <td>POT</td>
+                        <td>10</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>COT</td>
+                        <td>10.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>claude-sonnet-4</td>
+                        <td>POT</td>
+                        <td>10</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>COT</td>
+                        <td>10.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash-lite</td>
+                        <td>POT</td>
+                        <td>10</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>COT</td>
+                        <td>10.0</td>
+                        <td class="correct">✓</td>
+                    </tr>
+
+                    <tr>
+                        <td>gemini-2.0-flash</td>
+                        <td>POT</td>
+                        <td>None</td>
+                        <td class="incorrect">✗</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <script>
+            // Accuracy by Model Chart
+            new Chart(document.getElementById('accuracyChart'), {
+                type: 'bar',
+                data: {
+                    labels: ["gpt-4o-mini", "gpt-4o", "claude-3-haiku", "claude-sonnet-4", "gemini-2.0-flash-lite", "gemini-2.0-flash"],
+                    datasets: [{
+                        label: 'Accuracy (%)',
+                        data: [71.42857142857143, 57.14285714285714, 57.14285714285714, 71.42857142857143, 57.14285714285714, 28.57142857142857],
+                        backgroundColor: 'rgba(0, 212, 255, 0.6)',
+                        borderColor: 'rgba(0, 212, 255, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { color: '#888' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        },
+                        x: {
+                            ticks: { color: '#888' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#888' } }
+                    }
+                }
+            });
+            
+            // Error Type Chart
+            new Chart(document.getElementById('errorTypeChart'), {
+                type: 'bar',
+                data: {
+                    labels: ["Misunderstanding of Problem", "Formula Application Error", "Numerical Extraction Error", "Numerical Calculation Error", "Unsolvable Problem", "Ambiguous Statement", "Incorrect Answer"],
+                    datasets: [{
+                        label: 'Accuracy (%)',
+                        data: [41.66666666666667, 0.0, 41.66666666666667, 33.33333333333333, 91.66666666666666, 100.0, 91.66666666666666],
+                        backgroundColor: 'rgba(248, 113, 113, 0.6)',
+                        borderColor: 'rgba(248, 113, 113, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { color: '#888' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        },
+                        y: {
+                            ticks: { color: '#888' },
+                            grid: { color: 'rgba(255,255,255,0.1)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#888' } }
+                    }
+                }
+            });
+        </script>
+    </div>
+</body>
+</html>

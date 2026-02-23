@@ -61,6 +61,10 @@ class ErrorCategory(str, Enum):
     # E13: Used values not in context
     HALLUCINATION = "hallucination"
 
+    # Metacognitive responses (unsolvable problem detection)
+    METACOGNITIVE_REFUSAL = "metacognitive_refusal"
+    METACOGNITIVE_CAVEAT = "metacognitive_caveat"
+
     # Unknown/unclassified
     UNKNOWN = "unknown"
 
@@ -157,6 +161,20 @@ ERROR_METADATA = {
         "examples": [],
         "auto_detectable": True,
         "severity": "high",
+    },
+    ErrorCategory.METACOGNITIVE_REFUSAL: {
+        "table": None,
+        "description": "Model correctly refused to answer unsolvable problem",
+        "examples": [],
+        "auto_detectable": True,
+        "severity": "low",
+    },
+    ErrorCategory.METACOGNITIVE_CAVEAT: {
+        "table": None,
+        "description": "Model answered with uncertainty hedging on unsolvable problem",
+        "examples": [],
+        "auto_detectable": True,
+        "severity": "medium",
     },
     ErrorCategory.UNKNOWN: {
         "table": None,
