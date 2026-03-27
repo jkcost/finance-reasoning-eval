@@ -43,3 +43,6 @@ env/
 # Project specific
 nul
 experiments/results/
+
+# Legacy archive (로컬 보관용, Git 공유 제외)
+_archive/
