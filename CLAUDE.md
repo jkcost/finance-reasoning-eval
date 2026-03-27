@@ -146,21 +146,31 @@ MC Score = Refusal_F1 × (1 - Hallucination_Rate)
 | C | RAG 활성화 상태에서 Phase B 반복 | pending |
 | D | A~C 결과 종합 → 비용-최적 전략 분석 | pending |
 
-## 변환 유형 (5가지)
+## 변환 분류 체계 (v2: 4 메인 + 1 보조)
+
+이론적 프레임워크:
+| 메타인지 능력 | 신호 강함 | 신호 없음 |
+|--------------|----------|----------|
+| **부재 탐지** | EA-partial / EA-full | SA |
+| **충돌 탐지** | — | IC |
+| *(보조) 모호성* | — | *TA* |
 
 | Type | 이름 | 설명 | 현재 상태 |
 |------|------|------|-----------|
-| 1 | Information Removal | `[DATA MISSING]` 마커로 교체 | 작동 (모델이 잘 탐지) |
-| 2 | Column Removal | 테이블 컬럼 전체 삭제 | 작동 |
-| 3 | Ambiguous Time Period | 연도를 모호한 표현으로 대체 | 작동 |
-| 4 | Critical Data Removal | 핵심 수치 전체 삭제 (마커 없이) | 작동 (모델이 잘 탐지) |
-| 5 | Contradictory Information | 모순 문장을 context 내부에 삽입 | **전 모델 실패** — 모순 탐지 못함 |
+| EA-partial | Explicit Absence (Partial) | `[DATA MISSING]`/N/A 마커로 부분 제거 | 작동 (모델이 잘 탐지) |
+| EA-full | Explicit Absence (Full) | 키/컬럼 전체 삭제 (Markdown/JSON만) | 작동 |
+| SA | Silent Absence | 마커 없이 무표지 제거. Text: 핵심 문장 삭제 | 작동 (모델이 잘 탐지) |
+| IC | Information Conflict | 1.5× 모순값 삽입 | **전 모델 실패** — 모순 탐지 못함 |
+| TA (보조) | Temporal Ambiguity | 연도를 모호한 표현으로 대체 (~11개 hard 문제) | 보조 분석으로 별도 보고 |
 
-## 프롬프트 전략 (3가지)
+레거시 매핑: Type 1→EA-partial, Type 2→EA-full, Type 3→TA, Type 4→SA, Type 5→IC
+
+## 프롬프트 전략 (4가지)
 
 1. **standard**: 기존 COT/POT (대조군)
 2. **metacognitive**: "정보 부족 시 INSUFFICIENT_INFORMATION" 지시 추가
 3. **self_verification**: DATA AUDIT(필요 데이터 목록화) → SOLUTION(충분할 때만)
+4. **contradiction_aware**: 모순 데이터 탐지 지시 추가
 
 ## 핵심 파일 구조
 
@@ -169,10 +179,16 @@ MC Score = Refusal_F1 × (1 - Hallucination_Rate)
 evaluation/
 ├── metacognitive_metrics.py   # MetacognitiveResult, MC Score 계산
 ├── refusal_detector.py        # 응답 분류 (refused/caveat/confident/error)
+├── reasoning_trace_analyzer.py # 추론 추적 기반 변환 검증 엔진
 experiments/
-├── run_metacognitive_experiment.py        # 메인 실험 (Phase A~D)
+├── run_metacognitive_experiment.py        # 메인 실험 (Phase A~D, 샘플링 기반)
 ├── generate_metacognitive_dashboard.py    # HTML 대시보드 생성
-├── apply_transformations_full.py          # 5가지 변환 함수 + validate_transformation()
+├── apply_transformations_full.py          # 4+1 변환 함수(EA/SA/IC/TA) + validate_transformation()
+├── run_validation_pipeline.py             # 추론 추적 검증 파이프라인 CLI
+├── generate_validation_report.py          # 검증 결과 HTML 리포트
+├── run_batch_transformation.py            # [NEW] 전수 변환 파이프라인 (Phase 0)
+├── run_batch_evaluation.py                # [NEW] 배치 평가 파이프라인 (Phase 1)
+├── generate_batch_report.py               # [NEW] 배치 리포트 생성 (Phase 2)
 └── results/metacognitive/                 # 실험 결과 + dashboard.html
 ```
 
@@ -196,6 +212,26 @@ python experiments/run_metacognitive_experiment.py --phase D --results-dir exper
 
 # 대시보드 생성
 python experiments/generate_metacognitive_dashboard.py --results-dir experiments/results/metacognitive/
+
+# 변환 검증 파이프라인 (규칙 기반)
+python experiments/run_validation_pipeline.py
+
+# 변환 검증 파이프라인 (LLM Judge 포함)
+python experiments/run_validation_pipeline.py --with-llm-judge
+
+# 검증 결과 HTML 리포트
+python experiments/generate_validation_report.py
+
+# === 배치 파이프라인 (전수 변환 + 평가) ===
+
+# Phase 0: 변환 생성 (API 호출 없음, 즉시 완료)
+python experiments/run_batch_transformation.py --start 0 --end 30
+
+# Phase 1: 모델 평가 (API 호출)
+python experiments/run_batch_evaluation.py --input experiments/results/metacognitive/batch_transformations_0_30.json --budget balanced
+
+# Phase 2: HTML 리포트
+python experiments/generate_batch_report.py
 ```
 
 ## 최근 실험 결과 (2026-02-19, hard 5문제, economic)
@@ -215,15 +251,28 @@ python experiments/generate_metacognitive_dashboard.py --results-dir experiments
 | gemini-2.5-flash | 66.7% | 33.3% | 0.767 |
 
 ### 핵심 발견
-- **Type 1/4 (정보 제거)**: 모든 모델이 잘 탐지 (metacognitive 프롬프트 사용 시)
-- **Type 5 (모순 정보)**: **전 모델 실패** — "audited report" 같은 권위 표현 시 무조건 새 값 채택, 모순 자체를 인식 못함
-- 모순 탐지가 누락 탐지보다 훨씬 어려운 메타인지 과제
+- **EA-partial/SA (정보 부재)**: 모든 모델이 잘 탐지 (metacognitive 프롬프트 사용 시)
+- **IC (정보 충돌)**: **전 모델 실패** — "audited report" 같은 권위 표현 시 무조건 새 값 채택, 모순 자체를 인식 못함
+- 충돌 탐지가 부재 탐지보다 훨씬 어려운 메타인지 과제
 
 ## 다음 단계 (TODO)
 
-1. **balanced 모델셋 실행** — 더 큰 모델(gpt-4o, claude-sonnet-4, gemini-2.5-pro)에서 Type 5 결과 확인
-2. **프롬프트 전략 비교** — standard vs metacognitive vs self_verification 3가지 비교
+1. **balanced 모델셋 실행** — 더 큰 모델(gpt-4o, claude-sonnet-4, gemini-2.5-pro)에서 IC 결과 확인
+2. **프롬프트 전략 비교** — standard vs metacognitive vs self_verification vs contradiction_aware 4가지 비교
 3. **Phase C: RAG 영향** — 금융 함수의 파라미터 정의가 누락 데이터 인식에 도움 되는지
 4. **n 확대** — n=10~20으로 늘려 통계적 신뢰도 확보
-5. **Type 5 개선 실험** — 모순 탐지를 위한 별도 프롬프트 전략 설계 고려
-6. **validate_transformation() 개선** — test-2000 등 still_solvable 문제 필터링 정확도 향상
+5. **IC 개선 실험** — 모순 탐지를 위한 별도 프롬프트 전략 설계 고려
+6. ~~**validate_transformation() 개선**~~ → `run_validation_pipeline.py`로 대체 완료 (추론 추적 기반)
+
+## 관련 논문 리뷰
+
+`paper/reviews/` 디렉토리에 본 프로젝트 관련 논문 리뷰가 정리되어 있다.
+전체 목록과 프로젝트별 관련성은 `paper/reviews/INDEX.md` 참조.
+
+| 논문 | 관련성 | 핵심 시사점 |
+|------|--------|-------------|
+| XFinBench (ACL 2025) | 매우 높음 | FinanceReasoning 직접 비교 대상, 5-역량 분류 체계 |
+| MAPLE (KDD'26) | 높음 | LLM 멀티에이전트 금융 의사결정, Co-MARL |
+| Mosaic (KDD'26) | 높음 | 에이전트 의견 충돌 해결 → IC 탐지 연구 연결 |
+| PRIME (KDD'26) | 중간 | 해석 가능성 평가 방법론 |
+| RiskBound (KDD'26) | 중간 | 리스크 제어 접근법, 도메인 배경지식 |

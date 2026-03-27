@@ -1,48 +1,65 @@
 """
 Apply transformations to the FULL FinanceReasoning dataset.
 
-Transformation Taxonomy
-=======================
+Transformation Taxonomy (v2)
+============================
 
-The 5 transformation types are divided into two categories that test
-fundamentally different metacognitive abilities:
+Theoretical Framework
+---------------------
+Transformations are organized along two orthogonal axes:
 
-**Information Absence (Type 1~4)** — Can the model detect MISSING data?
-  - Type 1: Selective Removal + Explicit Marker ([DATA MISSING], N/A)
-    → Easiest; the marker itself is a strong signal.
-  - Type 2: Structural Removal (entire column/key deleted)
-    → Moderate; no marker, but the schema change is detectable.
-  - Type 3: Temporal Ambiguity (year → "the end of the period")
-    → Tests whether the model demands a concrete time reference.
-  - Type 4: Silent Removal (numbers stripped without any marker)
-    → Hardest absence type; context looks "normal" but values are gone.
+| Metacognitive Ability | Signal Strong (Explicit) | Signal Absent (Silent) |
+|-----------------------|--------------------------|------------------------|
+| **Absence Detection** | EA-partial / EA-full     | SA                     |
+| **Conflict Detection**| —                        | IC                     |
+| *(Auxiliary) Ambiguity*| —                       | *TA*                   |
 
-**Information Conflict (Type 5)** — Can the model detect CONTRADICTORY data?
-  - Type 5: Contradictory Information (1.5× conflicting value inserted)
-    → Separate cognitive skill from absence detection.
-    → Phase B experiments (2026-02-19) showed all models fail on this type,
-      even with metacognitive prompts.
+References:
+  - AbstentionBench (Feng+2024): Underspecified Context vs Contradictory Data
+  - Wen+2024 (EMNLP): context perturbation classified by signal strength
+  - CheckList (Ribeiro+2020): INV/DIR test — ability separation by type
+
+Main Types (4)
+--------------
+  - EA-partial (Explicit Absence — Partial):
+      Removes a specific value with an explicit marker ([DATA MISSING], N/A).
+      Baseline — easiest detection task; lower bound of metacognitive ability.
+  - EA-full (Explicit Absence — Full):
+      Deletes an entire key/column, removing a whole data dimension.
+      Structural absence without markers but with visible schema change.
+  - SA (Silent Absence):
+      Silently removes data without any markers.
+      JSON: empties dict values; Markdown: removes data rows;
+      Text: deletes sentences containing question-relevant data.
+      Hardest absence type — context reads naturally but critical info is gone.
+  - IC (Information Conflict):
+      Inserts contradictory data (1.5× value) for the same data point.
+      Tests a fundamentally different cognitive process from absence detection.
+
+Auxiliary Type (1)
+------------------
+  - TA (Temporal Ambiguity):
+      Replaces a specific year in the question with "the end of the period".
+      Only applicable to ~11 hard problems. Reported separately as auxiliary.
 
 Objectivity & Reproducibility
 -----------------------------
 - All transformations are **fully deterministic** (no random elements).
-- Types 1~4 are **question-driven**: transformation targets are selected
-  by matching question text against context keys/values.
-- Type 5 uses an **absolute rule**: last year/row × 1.5 multiplier.
+- EA/SA are **question-driven**: targets selected by matching question text.
+- IC uses an **absolute rule**: last year/row × 1.5 multiplier.
 - `validate_transformation()` runs the ground-truth Python solution against
   the transformed context to objectively verify unsolvability.
 - `_solution_uses_hardcoded_values()` detects solutions that bypass context
   parsing, preventing false "still_solvable" validation results.
 
-Domain Relevance Summary
--------------------------
-| Type | Domain Specificity | Rationale                                    |
-|------|--------------------|----------------------------------------------|
-| 1    | High               | Targets fiscal-year time-series structure     |
-| 2    | High               | Exploits tabular financial statement layout   |
-| 3    | High               | Relies on fiscal reporting period conventions |
-| 4    | Medium             | Numeric removal is generic; targeting is not  |
-| 5    | Low                | 1.5× multiplier is domain-agnostic           |
+Legacy Label Mapping
+--------------------
+Previous experiments used "Type N" labels. The mapping is:
+  Type 1: Information Removal        → EA-partial
+  Type 2: Table Column Removal       → EA-full
+  Type 3: Ambiguous Time Period      → TA
+  Type 4: Critical Data Removal      → SA
+  Type 5: Contradictory Information  → IC
 
 Usage:
     python experiments/apply_transformations_full.py
@@ -50,9 +67,292 @@ Usage:
 
 import json
 import re
+import sys
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set
 from copy import deepcopy
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "evaluation"))
+
+from hardcoded_solution_detector import _solution_uses_hardcoded_values
+
+
+# ============================================================================
+# QUESTION LEAKAGE PREVENTION HELPERS
+# ============================================================================
+
+
+def _extract_numbers_from_text(text: str) -> Set[str]:
+    """Extract normalized number strings from text for comparison.
+
+    Returns set of cleaned number strings (no $, no commas).
+    Used to detect if a removed value also appears in the question.
+    Normalizes integers consistently (75000.0 -> "75000") to avoid
+    format-dependent mismatch between question and context.
+    """
+    if not text:
+        return set()
+    raw = re.findall(r"\$?([\d,]+(?:\.\d+)?)", text)
+    result = set()
+    for n in raw:
+        clean = n.replace(",", "")
+        if len(clean.replace(".", "")) < 2:
+            continue
+        try:
+            val = float(clean)
+            # Always normalize: if value is integer, store as int string
+            if val == int(val):
+                result.add(str(int(val)))
+            else:
+                result.add(str(val))
+        except ValueError:
+            result.add(clean)
+    return result
+
+
+def _extract_critical_solution_values(python_solution: str) -> Set[str]:
+    """Extract only values that actually contribute to the final answer.
+
+    Traces variable dependencies from the return/answer statement backwards
+    to find which numeric assignments are computation-critical.
+    Values assigned but not used in the answer chain are excluded.
+
+    Example:
+        current_price = 150    # assigned but NOT used in answer
+        strike_price = 145     # used: intrinsic = strike - expiration
+        answer = intrinsic * shares - premium * shares  # uses strike, not current
+        => returns {'145'} but NOT {'150'}
+    """
+    if not python_solution:
+        return set()
+
+    lines = python_solution.strip().split("\n")
+
+    # Step 1: Parse all variable assignments
+    assignments: Dict[str, str] = {}  # var_name -> full RHS expression
+    var_values: Dict[str, Set[str]] = {}  # var_name -> numeric values in assignment
+
+    for line in lines:
+        line_s = line.strip()
+        if line_s.startswith("#") or line_s.startswith("def ") or not line_s:
+            continue
+        # Match: var = expression (but not ==)
+        m = re.match(r"(\w+)\s*=\s*(?!=)(.+)", line_s)
+        if m:
+            var_name = m.group(1)
+            rhs = m.group(2)
+            assignments[var_name] = rhs
+            var_values[var_name] = _extract_numbers_from_text(rhs)
+
+    # Step 2: Find the answer variable (return, answer =, result =)
+    answer_vars: Set[str] = set()
+    for line in reversed(lines):
+        line_s = line.strip()
+        if line_s.startswith("return "):
+            expr = line_s[7:]
+            # Find all variable references in return expression
+            answer_vars.update(re.findall(r"\b([a-zA-Z_]\w*)\b", expr))
+            break
+        m = re.match(r"(answer|result)\s*=\s*(.+)", line_s)
+        if m:
+            expr = m.group(2)
+            answer_vars.update(re.findall(r"\b([a-zA-Z_]\w*)\b", expr))
+            break
+
+    if not answer_vars:
+        # Fallback: return all values
+        return _extract_numbers_from_text(python_solution)
+
+    # Step 3: Trace dependencies backwards (BFS)
+    visited: Set[str] = set()
+    queue = list(answer_vars)
+    while queue:
+        var = queue.pop(0)
+        if var in visited:
+            continue
+        visited.add(var)
+        if var in assignments:
+            # Find all variables referenced in this assignment's RHS
+            rhs = assignments[var]
+            refs = re.findall(r"\b([a-zA-Z_]\w*)\b", rhs)
+            for ref in refs:
+                if ref in assignments and ref not in visited:
+                    queue.append(ref)
+
+    # Step 4: Collect numeric values from critical variables only
+    critical_nums: Set[str] = set()
+    for var in visited:
+        if var in var_values:
+            critical_nums.update(var_values[var])
+
+    return (
+        critical_nums if critical_nums else _extract_numbers_from_text(python_solution)
+    )
+
+
+def _value_in_question(value_str: str, question: str) -> bool:
+    """Check if a numeric value from context also appears in the question.
+
+    Normalizes both to handle format differences ($, commas, etc).
+    """
+    clean_val = value_str.replace("$", "").replace(",", "").replace("%", "").strip()
+    try:
+        val = float(clean_val)
+    except ValueError:
+        return clean_val in question
+
+    q_nums = _extract_numbers_from_text(question)
+    # Check normalized match
+    if val == int(val):
+        return str(int(val)) in q_nums
+    return str(val) in q_nums
+
+
+# ============================================================================
+# TYPE LABELS & LEGACY MAPPING
+# ============================================================================
+
+LABEL_EA_PARTIAL = "EA-partial: Explicit Absence (Partial)"
+LABEL_EA_FULL = "EA-full: Explicit Absence (Full)"
+LABEL_SA = "SA: Silent Absence"
+LABEL_IC = "IC: Information Conflict"
+LABEL_TA = "TA: Temporal Ambiguity"
+
+LEGACY_LABEL_MAP: Dict[str, str] = {
+    "Type 1: Information Removal": LABEL_EA_PARTIAL,
+    "Type 2: Table Column Removal": LABEL_EA_FULL,
+    "Type 3: Ambiguous Time Period": LABEL_TA,
+    "Type 4: Critical Data Removal": LABEL_SA,
+    "Type 5: Contradictory Information": LABEL_IC,
+}
+
+
+def normalize_transformation_label(label: str) -> str:
+    """Convert legacy 'Type N' label to new taxonomy, or return as-is."""
+    return LEGACY_LABEL_MAP.get(label, label)
+
+
+def normalize_context(context: str) -> str:
+    """Normalize context stored as Python list-literal string.
+
+    Some hard.json entries store markdown tables as "['| col1 | col2 |\\n|---|---|']"
+    instead of actual multiline strings. This function detects and fixes that format.
+    """
+    s = context.strip()
+    if s.startswith("['") and s.endswith("']"):
+        inner = s[2:-2]
+        # Replace literal \\n (two chars: backslash + n) with actual newlines
+        inner = inner.replace("\\n", "\n")
+        return inner
+    return context
+
+
+# ============================================================================
+# MARKDOWN TABLE PARSER
+# ============================================================================
+
+
+def _parse_markdown_table(context: str) -> Dict[str, Any]:
+    """Parse a markdown table into structured data with correct column alignment.
+
+    Returns:
+        {
+            "header_idx": int,       # line index of header row
+            "headers": List[str],    # column names (including row-label column)
+            "separator_idx": int,    # line index of --- separator
+            "data_rows": List[Dict], # [{line_idx, cells: List[str], raw: str}]
+            "col_values": Dict[int, Set[str]],  # column index -> set of numeric strings
+            "lines": List[str],      # all lines of context
+        }
+        Returns None if no valid table found.
+    """
+    lines = context.split("\n")
+    header_idx = -1
+
+    for i, line in enumerate(lines):
+        if "|" in line and i + 1 < len(lines) and "---" in lines[i + 1]:
+            header_idx = i
+            break
+
+    if header_idx == -1:
+        return None
+
+    # Parse header — keep ALL columns including empty row-label column
+    raw_headers = lines[header_idx].split("|")
+    # Trim leading/trailing empty strings from | delimiters
+    if raw_headers and raw_headers[0].strip() == "":
+        raw_headers = raw_headers[1:]
+    if raw_headers and raw_headers[-1].strip() == "":
+        raw_headers = raw_headers[:-1]
+    headers = [h.strip() for h in raw_headers]
+
+    # Parse data rows with same column count
+    data_rows = []
+    col_values: Dict[int, Set[str]] = {i: set() for i in range(len(headers))}
+
+    for line_idx in range(header_idx + 2, len(lines)):
+        line = lines[line_idx]
+        if "|" not in line:
+            continue
+        raw_cells = line.split("|")
+        if raw_cells and raw_cells[0].strip() == "":
+            raw_cells = raw_cells[1:]
+        if raw_cells and raw_cells[-1].strip() == "":
+            raw_cells = raw_cells[:-1]
+        cells = [c.strip() for c in raw_cells]
+
+        # Only include if has digits (data row)
+        if not re.search(r"\d", line):
+            continue
+
+        data_rows.append(
+            {
+                "line_idx": line_idx,
+                "cells": cells,
+                "raw": line,
+            }
+        )
+
+        for ci, cell in enumerate(cells):
+            if ci < len(headers):
+                col_values[ci] |= _extract_numbers_from_text(cell)
+
+    return {
+        "header_idx": header_idx,
+        "headers": headers,
+        "separator_idx": header_idx + 1,
+        "data_rows": data_rows,
+        "col_values": col_values,
+        "lines": lines,
+    }
+
+
+def _remove_column_from_line(line: str, col_idx: int) -> str:
+    """Remove a specific column from a markdown table line by index.
+
+    Column indexing matches _parse_markdown_table: index 0 is the first
+    column after the leading |.
+    """
+    if "|" not in line:
+        return line
+    raw_cells = line.split("|")
+    has_leading = raw_cells[0].strip() == ""
+    has_trailing = raw_cells[-1].strip() == ""
+
+    # Work with inner cells only
+    inner = raw_cells[1 if has_leading else 0 : -1 if has_trailing else len(raw_cells)]
+    if col_idx < 0 or col_idx >= len(inner):
+        return line
+
+    inner = inner[:col_idx] + inner[col_idx + 1 :]
+
+    result_parts = []
+    if has_leading:
+        result_parts.append("")
+    result_parts.extend(inner)
+    if has_trailing:
+        result_parts.append("")
+    return "|".join(result_parts)
 
 
 # ============================================================================
@@ -82,19 +382,32 @@ def transform_type1_json(context_dict: Dict, question: str) -> tuple:
     for key in context_dict.keys():
         key_lower = key.lower()
         if key_lower in question_lower:
-            # Remove a critical year/period from this key
             if isinstance(context_dict[key], dict):
                 years = list(context_dict[key].keys())
                 if years:
                     # Find year mentioned in question
                     for year_key in years:
                         if str(year_key) in question:
-                            # Remove this year
+                            value = context_dict[key][year_key]
+                            # Skip if the value also appears in question (leakage)
+                            if _value_in_question(str(value), question):
+                                continue
                             new_context = deepcopy(context_dict)
                             del new_context[key][year_key]
                             return (
                                 new_context,
-                                f"Removed critical data: {key}",
+                                f"Removed critical data: {key}[{year_key}]",
+                                f"Model should recognize missing {key} and refuse to answer",
+                            )
+                    # Fallback: remove a year NOT in question (still disrupts calculation)
+                    for year_key in years:
+                        value = context_dict[key][year_key]
+                        if not _value_in_question(str(value), question):
+                            new_context = deepcopy(context_dict)
+                            del new_context[key][year_key]
+                            return (
+                                new_context,
+                                f"Removed critical data: {key}[{year_key}]",
                                 f"Model should recognize missing {key} and refuse to answer",
                             )
 
@@ -169,72 +482,223 @@ def transform_type3_question(question: str) -> tuple:
     return None, None, None
 
 
+def transform_type3_context(context: str, question: str) -> tuple:
+    """TA: Replace year references in context with ambiguous terms.
+
+    Design rationale:
+        When the question has no explicit year, fall back to modifying
+        the context's temporal references. Replaces ONE year with an ambiguous
+        term like "the reporting period", creating temporal ambiguity when
+        the context contains data for multiple years/periods.
+    Precondition:
+        Context must contain at least 2 distinct years; replacing a year
+        in single-year context doesn't create genuine ambiguity.
+    Detection difficulty:
+        MODERATE to HIGH — context reads naturally but the model cannot
+        determine which period the data refers to.
+    """
+    year_pattern = r"\b((?:19|20)\d{2})\b"
+    years_in_context = re.findall(year_pattern, context)
+
+    if not years_in_context:
+        return None, None, None
+
+    unique_years = sorted(set(years_in_context))
+    if len(unique_years) < 2:
+        return None, None, None
+
+    # Prefer a year mentioned in the question if available
+    years_in_question = re.findall(year_pattern, question)
+    target_year = None
+    for y in years_in_question:
+        if y in unique_years:
+            target_year = y
+            break
+
+    if not target_year:
+        # Pick the most recent year (most likely to be the answer target)
+        target_year = unique_years[-1]
+
+    replacement = "the reporting period"
+    new_context = re.sub(r"\b" + target_year + r"\b", replacement, context)
+
+    return (
+        new_context,
+        f"Replaced year {target_year} with '{replacement}' in context",
+        "Model should recognize that the time period is ambiguous",
+    )
+
+
 def transform_type1_text(context: str, question: str) -> tuple:
     """Type 1: Information Removal for text context.
 
     Design rationale:
-        Replaces the first significant number in the text with "[DATA MISSING]",
+        Replaces a significant number in the text with "[DATA MISSING]",
         simulating an explicitly flagged data gap.
     Domain relevance:
         MEDIUM — number replacement is generic, but targets financial numeric data.
     Objectivity:
-        Deterministic; selects the first number matching the currency/number pattern.
+        Deterministic; prefers numbers NOT present in the question text
+        to avoid question-leakage (where question already contains the value).
     Detection difficulty:
         LOW — the "[DATA MISSING]" marker is an obvious signal.
-    Known limitations:
-        May replace a number not critical to the question; validate_transformation
-        filters these false positives.
     """
-    # Find numbers in context
-    number_pattern = r"\$?\d+(?:,\d{3})*(?:\.\d+)?"
+    number_pattern = r"\$?\d+(?:,\d{3})*(?:\.\d+)?%?"
     numbers = re.findall(number_pattern, context)
 
-    if numbers and len(numbers) > 0:
-        # Remove first significant number
-        target_num = numbers[0]
-        new_context = context.replace(target_num, "[DATA MISSING]", 1)
-        return (
-            new_context,
-            f"Removed critical number: {target_num}",
-            "Model should recognize missing data and refuse to answer",
-        )
+    if not numbers:
+        return None, None, None
 
-    return None, None, None
+    def _num_value(n: str) -> float:
+        """Parse numeric magnitude for prioritization."""
+        clean = n.replace("$", "").replace(",", "").replace("%", "")
+        try:
+            return float(clean)
+        except ValueError:
+            return 0
+
+    # Filter: skip numbers in question AND skip small contextual numbers (<= 31)
+    # Small numbers are often descriptive (e.g., "12 days", "10 years")
+    non_leaked = [n for n in numbers if not _value_in_question(n, question)]
+    data_values = [n for n in non_leaked if _num_value(n) > 31]
+
+    # Fallback chain: data_values > non_leaked > all numbers
+    target_num = (
+        data_values[0] if data_values else non_leaked[0] if non_leaked else numbers[0]
+    )
+
+    new_context = context.replace(target_num, "[DATA MISSING]", 1)
+    return (
+        new_context,
+        f"Removed critical number: {target_num}",
+        "Model should recognize missing data and refuse to answer",
+    )
 
 
-def transform_type1_markdown(context: str, question: str) -> tuple:
+def transform_type2_text(context: str, question: str) -> tuple:
+    """EA-full: Remove all question-relevant data sentences from text context.
+
+    Design rationale:
+        Removes ALL sentences containing both question keywords and numeric data.
+        Simulates an entire data section being absent from a financial report.
+        More aggressive than SA-text (which removes only one sentence).
+    Detection difficulty:
+        MODERATE — the remaining text is grammatically complete but lacks
+        the full data section needed to solve the problem.
+    Difference from SA-text:
+        SA removes the single most relevant sentence; EA-full removes ALL
+        sentences with question-relevant numeric data.
+    """
+    sentences = re.split(r"(?<=[.!?])\s+", context.strip())
+    if len(sentences) <= 2:
+        return None, None, None
+
+    question_lower = question.lower()
+    keywords = [
+        w
+        for w in re.findall(r"\b\w+\b", question_lower)
+        if w not in _SA_STOPWORDS and len(w) > 2 and not w.isdigit()
+    ]
+
+    if not keywords:
+        return None, None, None
+
+    q_nums = _extract_numbers_from_text(question)
+
+    scored = []
+    for i, sent in enumerate(sentences):
+        sent_lower = sent.lower()
+        keyword_hits = sum(1 for kw in keywords if kw in sent_lower)
+        has_number = bool(re.search(r"\d+", sent))
+        if keyword_hits > 0 and has_number:
+            # Check if sentence has numbers NOT in the question
+            sent_nums = _extract_numbers_from_text(sent)
+            has_non_leaked = bool(sent_nums - q_nums)
+            scored.append((i, keyword_hits, has_non_leaked))
+
+    if not scored:
+        return None, None, None
+
+    # Only remove sentences that have non-leaked numbers (effective removal)
+    # If all sentences only have leaked numbers, fall back to removing all
+    effective = [(i, kw) for i, kw, nl in scored if nl]
+    if effective:
+        to_remove_set = {i for i, _ in effective}
+    else:
+        to_remove_set = {i for i, _, _ in scored}
+
+    remaining = [s for i, s in enumerate(sentences) if i not in to_remove_set]
+
+    # All sentences matched — keep the least-relevant one as residual context
+    if not remaining:
+        least_relevant_idx = min(scored, key=lambda x: x[1])[0]
+        to_remove_set.discard(least_relevant_idx)
+        remaining = [sentences[least_relevant_idx]]
+
+    new_context = " ".join(remaining)
+    return (
+        new_context,
+        f"Removed {len(to_remove_set)} data-containing sentences entirely",
+        "Model should recognize that critical data sections are missing",
+    )
+
+
+def transform_type1_markdown(
+    context: str, question: str, python_solution: str = ""
+) -> tuple:
     """Type 1: Information Removal for markdown table.
 
     Design rationale:
-        Replaces the first numeric cell in a markdown table with "N/A",
+        Replaces a numeric cell in a markdown table with "N/A",
         simulating a missing data point in a tabulated financial report.
     Domain relevance:
         HIGH — markdown tables directly mirror financial statement layouts.
     Objectivity:
-        Deterministic; targets the first cell matching the number pattern.
+        Deterministic; prioritizes cells that are (1) used in the solution
+        and (2) not present in the question text.
     Detection difficulty:
         LOW — "N/A" is an explicit missing-data marker.
-    Known limitations:
-        May target a cell irrelevant to the question; validate_transformation filters.
     """
-    # Find table cells with numbers
     cell_pattern = r"\|\s*(\$?\d+(?:,\d{3})*(?:\.\d+)?)\s*\|"
     matches = list(re.finditer(cell_pattern, context))
 
-    if matches:
-        # Replace first cell with N/A
-        match = matches[0]
-        new_context = context[: match.start(1)] + "N/A" + context[match.end(1) :]
+    if not matches:
+        return None, None, None
+
+    # Use BFS-traced critical values for better targeting
+    critical_nums = (
+        _extract_critical_solution_values(python_solution) if python_solution else set()
+    )
+    sol_nums = _extract_numbers_from_text(python_solution) if python_solution else set()
+    q_nums = _extract_numbers_from_text(question)
+
+    def _cell_score(m: re.Match) -> tuple:
+        val = m.group(1)
+        val_norm = _extract_numbers_from_text(val)
+        is_critical = bool(val_norm & critical_nums) if critical_nums else False
+        is_in_solution = bool(val_norm & sol_nums) if sol_nums else False
+        is_in_question = bool(val_norm & q_nums)
+        # Priority: critical > in_solution > not_in_question
         return (
-            new_context,
-            f"Removed cell value in column: {match.group(1)}",
-            f"Model should recognize missing {match.group(1)} data and refuse to answer",
+            is_critical and not is_in_question,
+            is_in_solution and not is_in_question,
+            not is_in_question,
         )
 
-    return None, None, None
+    matches_sorted = sorted(matches, key=_cell_score, reverse=True)
+    match = matches_sorted[0]
+
+    new_context = context[: match.start(1)] + "N/A" + context[match.end(1) :]
+    return (
+        new_context,
+        f"Removed cell value: {match.group(1)}",
+        f"Model should recognize missing {match.group(1)} data and refuse to answer",
+    )
 
 
-def transform_type2_markdown(context: str, question: str) -> tuple:
+def transform_type2_markdown(
+    context: str, question: str, python_solution: str = ""
+) -> tuple:
     """Type 2: Table Column Removal for markdown table.
 
     Design rationale:
@@ -243,64 +707,84 @@ def transform_type2_markdown(context: str, question: str) -> tuple:
     Domain relevance:
         HIGH — columns typically represent fiscal periods or line items.
     Objectivity:
-        Deterministic; prefers the column whose header matches the question text,
-        falls back to the second column.
+        Deterministic; prefers columns containing solution-critical values.
+        Falls back to question-matching or last numeric column.
     Detection difficulty:
         MODERATE — the table looks syntactically correct but has fewer columns.
     Known limitations:
-        Tables with ≤2 columns are skipped (removing would destroy the table).
+        Tables with <=2 data columns are skipped (removing would destroy the table).
     """
-    # Find table header
-    lines = context.split("\n")
-    header_idx = -1
-
-    for i, line in enumerate(lines):
-        if "|" in line and i + 1 < len(lines) and "---" in lines[i + 1]:
-            header_idx = i
-            break
-
-    if header_idx == -1:
+    table = _parse_markdown_table(context)
+    if table is None:
         return None, None, None
 
-    # Parse header
-    headers = [h.strip() for h in lines[header_idx].split("|") if h.strip()]
+    headers = table["headers"]
+    col_values = table["col_values"]
+    lines = table["lines"]
 
-    if len(headers) <= 2:
+    # Need at least 2 data columns (excluding row-label column)
+    data_col_start = (
+        1 if headers[0] == "" or not any(c.isdigit() for c in headers[0]) else 0
+    )
+    data_col_count = len(headers) - data_col_start
+    if data_col_count <= 2:
         return None, None, None
 
-    # Find column mentioned in question
+    # Use critical solution values for scoring (BFS-traced, not all numbers)
+    critical_nums = (
+        _extract_critical_solution_values(python_solution) if python_solution else set()
+    )
+    sol_nums = _extract_numbers_from_text(python_solution) if python_solution else set()
     question_lower = question.lower()
+
+    # Score each data column by solution-criticality
     target_col_idx = -1
     target_col_name = None
 
-    for idx, header in enumerate(headers):
-        if header.lower() in question_lower or any(
-            word in question_lower for word in header.lower().split()
-        ):
-            target_col_idx = idx
-            target_col_name = header
-            break
+    if critical_nums:
+        best_score = 0
+        for ci in range(data_col_start, len(headers)):
+            overlap = len(col_values.get(ci, set()) & critical_nums)
+            if overlap > best_score:
+                best_score = overlap
+                target_col_idx = ci
+                target_col_name = headers[ci]
+
+    # Fallback to all solution numbers if critical extraction found nothing
+    if target_col_idx == -1 and sol_nums:
+        best_score = 0
+        for ci in range(data_col_start, len(headers)):
+            overlap = len(col_values.get(ci, set()) & sol_nums)
+            if overlap > best_score:
+                best_score = overlap
+                target_col_idx = ci
+                target_col_name = headers[ci]
 
     if target_col_idx == -1:
-        # Remove second column as fallback
-        target_col_idx = 1
-        target_col_name = headers[1]
+        # Fallback: question-matching column header
+        for idx in range(data_col_start, len(headers)):
+            header = headers[idx]
+            if header.lower() in question_lower or any(
+                word in question_lower
+                for word in header.lower().split()
+                if len(word) > 2
+            ):
+                target_col_idx = idx
+                target_col_name = header
+                break
 
-    # Remove column from all rows
+    if target_col_idx == -1:
+        # Last resort: remove the last data column
+        target_col_idx = len(headers) - 1
+        target_col_name = headers[target_col_idx]
+
+    # Remove column from all lines using aligned helper
     new_lines = []
-    for i, line in enumerate(lines):
-        if "|" not in line:
+    for line in lines:
+        if "|" in line:
+            new_lines.append(_remove_column_from_line(line, target_col_idx))
+        else:
             new_lines.append(line)
-            continue
-
-        cells = line.split("|")
-        # Keep first and last empty cells, remove target column
-        new_cells = (
-            [cells[0]]
-            + [cells[j] for j in range(1, len(cells) - 1) if j - 1 != target_col_idx]
-            + [cells[-1]]
-        )
-        new_lines.append("|".join(new_cells))
 
     new_context = "\n".join(new_lines)
     return (
@@ -337,7 +821,9 @@ def _extract_numbers_from_python(python_solution: str) -> List[str]:
     return numbers
 
 
-def transform_type4_json(context_dict: Dict, question: str, python_solution: str = "") -> tuple:
+def transform_type4_json(
+    context_dict: Dict, question: str, python_solution: str = ""
+) -> tuple:
     """Type 4: Critical Data Removal — silently remove all key data from JSON.
 
     Design rationale:
@@ -383,7 +869,9 @@ def transform_type4_json(context_dict: Dict, question: str, python_solution: str
     )
 
 
-def transform_type4_text(context: str, question: str, python_solution: str = "") -> tuple:
+def transform_type4_text(
+    context: str, question: str, python_solution: str = ""
+) -> tuple:
     """Type 4: Critical Data Removal — remove all numbers from text context.
 
     Design rationale:
@@ -416,7 +904,9 @@ def transform_type4_text(context: str, question: str, python_solution: str = "")
     )
 
 
-def transform_type4_markdown(context: str, question: str, python_solution: str = "") -> tuple:
+def transform_type4_markdown(
+    context: str, question: str, python_solution: str = ""
+) -> tuple:
     """Type 4: Critical Data Removal — remove data rows from markdown table.
 
     Design rationale:
@@ -465,6 +955,145 @@ def transform_type4_markdown(context: str, question: str, python_solution: str =
 
 
 # ============================================================================
+# SA TEXT: SILENT ABSENCE — SENTENCE DELETION (NEW)
+# ============================================================================
+
+_SA_STOPWORDS = frozenset(
+    {
+        "what",
+        "is",
+        "the",
+        "of",
+        "a",
+        "an",
+        "in",
+        "to",
+        "for",
+        "and",
+        "or",
+        "was",
+        "were",
+        "are",
+        "be",
+        "been",
+        "being",
+        "how",
+        "much",
+        "many",
+        "do",
+        "does",
+        "did",
+        "has",
+        "have",
+        "had",
+        "that",
+        "this",
+        "it",
+        "its",
+        "by",
+        "at",
+        "on",
+        "from",
+        "with",
+        "as",
+        "if",
+        "not",
+        "no",
+        "but",
+        "so",
+        "than",
+        "then",
+        "when",
+        "which",
+        "who",
+        "where",
+        "why",
+        "all",
+        "each",
+        "per",
+        "can",
+        "will",
+        "would",
+        "could",
+        "should",
+    }
+)
+
+
+def transform_sa_text(context: str, question: str) -> tuple:
+    """SA: Silent Absence — delete question-relevant sentences from text.
+
+    Design rationale:
+        Identifies sentences containing both question keywords and numeric
+        data, then removes them entirely. The remaining text reads naturally
+        but lacks information required to solve the problem.
+    Detection difficulty:
+        HIGH — the remaining context is grammatically complete and coherent;
+        no markers hint at missing data.
+    Difference from legacy Type 4 text:
+        Type 4 replaced numbers with '___' (still a visible marker).
+        SA text deletes entire sentences, producing truly marker-free context.
+    """
+    sentences = re.split(r"(?<=[.!?])\s+", context.strip())
+    if len(sentences) <= 1:
+        return None, None, None
+
+    question_lower = question.lower()
+    keywords = [
+        w
+        for w in re.findall(r"\b\w+\b", question_lower)
+        if w not in _SA_STOPWORDS and len(w) > 2 and not w.isdigit()
+    ]
+
+    if not keywords:
+        return None, None, None
+
+    # Score each sentence: keyword hits + must contain a number
+    scored: List[tuple] = []
+    for i, sent in enumerate(sentences):
+        sent_lower = sent.lower()
+        keyword_hits = sum(1 for kw in keywords if kw in sent_lower)
+        has_number = bool(re.search(r"\d+", sent))
+        if keyword_hits > 0 and has_number:
+            scored.append((i, keyword_hits))
+
+    if not scored:
+        return None, None, None
+
+    # Prefer sentences whose numbers are NOT leaked in the question
+    q_nums = _extract_numbers_from_text(question)
+
+    def _has_non_leaked_number(sent_idx: int) -> bool:
+        """Check if sentence has at least one number not in the question."""
+        sent = sentences[sent_idx]
+        sent_nums = _extract_numbers_from_text(sent)
+        return bool(sent_nums - q_nums)
+
+    # Sort by: (1) has non-leaked numbers, (2) keyword relevance
+    scored_sorted = sorted(
+        scored,
+        key=lambda x: (_has_non_leaked_number(x[0]), x[1]),
+        reverse=True,
+    )
+
+    target_idx = scored_sorted[0][0]
+    removed_sent = sentences[target_idx]
+    remaining = sentences[:target_idx] + sentences[target_idx + 1 :]
+
+    # Safety: keep at least one sentence
+    if not remaining:
+        return None, None, None
+
+    new_context = " ".join(remaining)
+
+    return (
+        new_context,
+        f"Silently removed sentence: {removed_sent[:80]}...",
+        "Model should detect missing critical information without markers",
+    )
+
+
+# ============================================================================
 # TYPE 5: CONTRADICTORY INFORMATION
 # ============================================================================
 
@@ -504,10 +1133,14 @@ def transform_type5_json(context_dict: Dict, question: str) -> tuple:
                     target_year = years[-1]
                     original_val = context_dict[key][target_year]
                     try:
-                        num_val = float(str(original_val).replace(",", "").replace("%", ""))
+                        num_val = float(
+                            str(original_val).replace(",", "").replace("%", "")
+                        )
                         contra_val = num_val * 1.5
                         # Add conflicting value as sub-key within same entry
-                        new_context[key][f"{target_year}_conflicting_report"] = contra_val
+                        new_context[key][f"{target_year}_conflicting_report"] = (
+                            contra_val
+                        )
                         contradictions.append(
                             f"{key}[{target_year}]={original_val} vs {key}[{target_year}_conflicting_report]={contra_val}"
                         )
@@ -524,26 +1157,91 @@ def transform_type5_json(context_dict: Dict, question: str) -> tuple:
     )
 
 
-def transform_type5_text(context: str, question: str) -> tuple:
+def _is_descriptor_number(val: float, context: str, match: re.Match) -> bool:
+    """Check if a number is a descriptor (date, period count) rather than data.
+
+    Descriptor numbers are those that describe structure (e.g., "10 trading days",
+    "January 10", "5-year") rather than computation-critical data values.
+    These are poor IC targets because models can verify them by counting data.
+    """
+    pos = match.start()
+    # Get surrounding text (50 chars before and after)
+    before = context[max(0, pos - 50) : pos].lower()
+    after_text = context[pos : min(len(context), pos + 80)].lower()
+    match_text = match.group(0).lower()
+
+    # Date patterns: month names near the number
+    month_names = [
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "jun",
+        "jul",
+        "aug",
+        "sep",
+        "oct",
+        "nov",
+        "dec",
+    ]
+    for month in month_names:
+        if month in before[-20:] or month in after_text[:20]:
+            return True
+
+    # Year-like numbers (1900-2100)
+    if 1900 <= val <= 2100 and val == int(val):
+        return True
+
+    # Period descriptors: "N trading days", "N years", "past N", "last N"
+    period_words = [
+        "trading day",
+        "business day",
+        "year",
+        "month",
+        "week",
+        "day",
+        "quarter",
+        "period",
+        "session",
+    ]
+    for pw in period_words:
+        if pw in after_text[:30]:
+            return True
+
+    # "past N", "last N", "over N", "first N"
+    if re.search(r"(past|last|over|first|next)\s*$", before[-15:]):
+        return True
+
+    return False
+
+
+def transform_type5_text(
+    context: str, question: str, python_solution: str = ""
+) -> tuple:
     """Type 5: Insert contradictory data directly into text context.
 
-    Design rationale:
-        Finds the first significant number, duplicates its containing sentence
-        with a 1.5× altered value, and prepends an explicit discrepancy note.
-        This creates two conflicting statements about the same quantity.
-    Domain relevance:
-        LOW — sentence duplication with a numeric change is domain-agnostic,
-        though the discrepancy note language references financial reporting.
-    Objectivity:
-        Deterministic; targets the first number > 0.001, multiplies by 1.5,
-        preserves original formatting (currency, percent, decimals).
-    Detection difficulty:
-        VERY HIGH — despite the explicit "Note: There is a discrepancy" prefix,
-        models in Phase B experiments still failed to flag the contradiction.
-    Known limitations:
-        - Sentence splitting by regex may fail on complex punctuation
-        - The explicit discrepancy note makes this easier than real-world cases
-          (yet models still fail — indicating fundamental weakness)
+    Design rationale (v2):
+        Targets a solution-critical numeric value (not descriptors like dates
+        or period counts). Skips values that appear in the question (which
+        would let the model resolve the contradiction trivially). Duplicates
+        the containing sentence with a 1.5× altered value and an explicit
+        discrepancy note.
+    Improvements over v1:
+        - Solution-aware targeting: prefers numbers used in python_solution
+        - Question-leak prevention: skips values already in the question
+        - Descriptor filtering: skips dates, years, period counts
     """
     number_pattern = r"\$?\d+(?:,\d{3})*(?:\.\d+)?%?"
     matches = list(re.finditer(number_pattern, context))
@@ -551,20 +1249,55 @@ def transform_type5_text(context: str, question: str) -> tuple:
     if not matches:
         return None, None, None
 
-    # Find first significant number (skip trivially small ones)
-    target = None
-    for m in matches:
+    q_nums = _extract_numbers_from_text(question)
+    sol_nums = (
+        _extract_critical_solution_values(python_solution) if python_solution else set()
+    )
+
+    # Score each number match for IC suitability
+    def _ic_score(m: re.Match) -> tuple:
         val_str = m.group(0).replace("$", "").replace(",", "").replace("%", "")
         try:
-            if float(val_str) > 0.001:
-                target = m
-                break
+            val = float(val_str)
         except ValueError:
-            continue
+            return (-1, -1, -1, -1)
 
-    if target is None:
+        if val <= 0.001:
+            return (-1, -1, -1, -1)
+
+        # Normalize for comparison
+        val_norm = str(int(val)) if val == int(val) else str(val)
+
+        is_in_question = val_norm in q_nums
+        is_in_solution = val_norm in sol_nums if sol_nums else False
+        is_descriptor = _is_descriptor_number(val, context, m)
+
+        # Priority: (not_in_question, in_solution, not_descriptor, value_size)
+        return (
+            0 if is_in_question else 1,  # Must not be in question
+            1 if is_in_solution else 0,  # Prefer solution-critical
+            0 if is_descriptor else 1,  # Avoid descriptors
+            val,  # Larger values = more impactful
+        )
+
+    scored = [(m, _ic_score(m)) for m in matches]
+    scored = [(m, s) for m, s in scored if s[0] >= 0]
+
+    if not scored:
         return None, None, None
 
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    # Skip if best candidate is in question (all candidates leaked)
+    best_match, best_score = scored[0]
+    if best_score[0] == 0:
+        # All candidates are in question — try anyway with best non-question if exists
+        non_q = [(m, s) for m, s in scored if s[0] == 1]
+        if non_q:
+            best_match, best_score = non_q[0]
+        # else: proceed with leaked value (better than nothing)
+
+    target = best_match
     original_str = target.group(0)
     val_str_clean = original_str.replace("$", "").replace(",", "").replace("%", "")
 
@@ -591,7 +1324,6 @@ def transform_type5_text(context: str, question: str) -> tuple:
         contra_formatted = f"{contra_formatted}%"
 
     # Find the sentence containing the target number
-    # Split by sentence boundaries
     sentences = re.split(r"(?<=[.!?])\s+", context)
     target_sent_idx = -1
     for i, sent in enumerate(sentences):
@@ -602,50 +1334,93 @@ def transform_type5_text(context: str, question: str) -> tuple:
     if target_sent_idx == -1:
         return None, None, None
 
-    # Create contradictory sentence by replacing the number
+    # Strategy: REPLACE original value with 1.5x in the original sentence,
+    # then ADD a contradictory sentence with the original value after it.
+    # This ensures the model cannot simply pick the "first" (original) value.
     original_sentence = sentences[target_sent_idx]
-    contra_sentence = original_sentence.replace(original_str, contra_formatted, 1)
+    replaced_sentence = original_sentence.replace(original_str, contra_formatted, 1)
 
-    # Prepend explicit discrepancy marker
+    # The contradiction sentence restates the original value as from "another source"
     contra_sentence = (
-        f"Note: There is a discrepancy — one source reports {original_str}, "
-        f"while another shows {contra_formatted}. "
-        + contra_sentence[0].upper() + contra_sentence[1:]
+        f"Note: There is a discrepancy — one source reports {contra_formatted}, "
+        f"while another shows {original_str}."
     )
 
-    # Insert contradictory sentence right after the original
+    # Replace original sentence with the modified one, then add contradiction
     new_sentences = (
-        sentences[: target_sent_idx + 1]
-        + [contra_sentence]
+        sentences[:target_sent_idx]
+        + [replaced_sentence, contra_sentence]
         + sentences[target_sent_idx + 1 :]
     )
     new_context = " ".join(new_sentences)
 
     return (
         new_context,
-        f"Inserted contradictory sentence: {original_str} vs {contra_formatted}",
+        f"Replaced {original_str} with {contra_formatted}, added contradiction",
         "Model should detect two conflicting values in the context and refuse or flag inconsistency",
     )
 
 
-def transform_type5_markdown(context: str, question: str) -> tuple:
+def _is_date_or_year_cell(cell: str) -> bool:
+    """Check if a table cell contains date/year info that should not be multiplied."""
+    cell_lower = cell.lower().strip()
+    month_names = [
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "jun",
+        "jul",
+        "aug",
+        "sep",
+        "oct",
+        "nov",
+        "dec",
+        "balance",
+        "ending",
+        "beginning",
+        "as of",
+        "date",
+        "period",
+    ]
+    for m in month_names:
+        if m in cell_lower:
+            return True
+    # Pure year cell: "2012", "2013"
+    nums = re.findall(r"\d+", cell)
+    if nums and all(
+        1900 <= int(n) <= 2100 for n in nums if n.isdigit() and len(n) == 4
+    ):
+        if all(len(n) == 4 for n in nums):
+            return True
+    return False
+
+
+def transform_type5_markdown(
+    context: str, question: str, python_solution: str = ""
+) -> tuple:
     """Type 5: Add contradictory row to markdown table.
 
-    Design rationale:
-        Duplicates the last data row with all numeric values × 1.5 and labels
-        it "(conflicting report)". The model should notice two rows claiming
-        different values for the same data point.
-    Domain relevance:
-        MEDIUM — conflicting rows in financial tables can occur from multiple
-        reporting sources or restatements, though the 1.5× rule is artificial.
-    Objectivity:
-        Deterministic; targets the last numeric row, multiplies all numbers by 1.5.
-    Detection difficulty:
-        VERY HIGH — models tend to treat the new row as additional data rather
-        than a conflicting duplicate.
-    Known limitations:
-        - "(conflicting report)" label may be too subtle
-        - Row duplication with different numbers could be interpreted as a new period
+    Design rationale (v3):
+        Selects the data row with the most solution-critical values (not just
+        the last row). Replaces its values with 1.5x, then adds the original
+        as a conflicting report row. Protects date/year cells.
+    Improvements over v2:
+        - Solution-aware row selection: picks the row whose values appear
+          most in the python_solution's answer chain
+        - Avoids summary/balance rows that models may skip
     """
     lines = context.split("\n")
     header_idx = -1
@@ -658,31 +1433,67 @@ def transform_type5_markdown(context: str, question: str) -> tuple:
     if header_idx == -1:
         return None, None, None
 
-    # Find last data row with numbers
-    last_data_idx = -1
-    for i in range(len(lines) - 1, header_idx + 1, -1):
+    # Collect all data rows with numbers
+    data_rows = []
+    for i in range(header_idx + 2, len(lines)):
         if "|" in lines[i] and re.search(r"\d", lines[i]):
-            last_data_idx = i
-            break
+            data_rows.append(i)
 
-    if last_data_idx == -1:
+    if not data_rows:
         return None, None, None
 
-    # Create contradictory row by multiplying numbers
-    original_row = lines[last_data_idx]
+    # Score each row by solution-criticality
+    sol_nums = (
+        _extract_critical_solution_values(python_solution) if python_solution else set()
+    )
+    q_nums = _extract_numbers_from_text(question)
+
+    def _row_score(row_idx: int) -> tuple:
+        row = lines[row_idx]
+        row_nums = _extract_numbers_from_text(row)
+        # Skip date/summary rows
+        if _is_date_or_year_cell(row.split("|")[1] if len(row.split("|")) > 1 else ""):
+            return (-1, 0, 0)
+        sol_overlap = len(row_nums & sol_nums) if sol_nums else 0
+        q_overlap = len(row_nums & q_nums)
+        has_data = len(row_nums)
+        return (0 if has_data == 0 else 1, sol_overlap, -q_overlap)
+
+    scored_rows = [(idx, _row_score(idx)) for idx in data_rows]
+    scored_rows.sort(key=lambda x: x[1], reverse=True)
+
+    # Pick best row (highest solution overlap, avoid date rows)
+    target_idx = scored_rows[0][0]
+
+    # Create contradictory row — only multiply data cells, skip date/year cells
+    original_row = lines[target_idx]
     cells = original_row.split("|")
     new_cells = []
     modified = False
 
     for cell in cells:
+        # Skip date/year cells entirely
+        if _is_date_or_year_cell(cell):
+            new_cells.append(cell)
+            continue
+
         nums = re.findall(r"(\d+(?:,\d{3})*(?:\.\d+)?)", cell)
         new_cell = cell
         for num_str in nums:
             try:
                 num_val = float(num_str.replace(",", ""))
+                # Skip year-like standalone numbers
+                if 1900 <= num_val <= 2100 and num_val == int(num_val):
+                    continue
+                # Skip day-of-month (1-31)
+                if 1 <= num_val <= 31 and num_val == int(num_val) and len(num_str) <= 2:
+                    continue
                 contra_val = num_val * 1.5
                 if "." in num_str:
-                    new_cell = new_cell.replace(num_str, f"{contra_val:.2f}", 1)
+                    decimal_places = len(num_str.split(".")[-1])
+                    new_cell = new_cell.replace(
+                        num_str, f"{contra_val:.{decimal_places}f}", 1
+                    )
                 else:
                     new_cell = new_cell.replace(num_str, f"{int(contra_val):,}", 1)
                 modified = True
@@ -693,19 +1504,30 @@ def transform_type5_markdown(context: str, question: str) -> tuple:
     if not modified:
         return None, None, None
 
-    # Add "(conflicting report)" label to first non-empty cell
-    for i, cell in enumerate(new_cells):
+    # Strategy: REPLACE original row values with 1.5x, then ADD the original
+    # row as "(conflicting report)" after it. This prevents the model from
+    # simply using the "first" (original) value.
+
+    # The modified row replaces the original in-place
+    modified_row = "|".join(new_cells)
+
+    # The original row gets "(conflicting report)" label
+    orig_cells = original_row.split("|")
+    for i, cell in enumerate(orig_cells):
         stripped = cell.strip()
         if stripped and not re.match(r"^[\d,.\-\s%$]+$", stripped):
-            new_cells[i] = cell.rstrip() + " (conflicting report) "
+            orig_cells[i] = cell.rstrip() + " (conflicting report) "
             break
+    conflict_row = "|".join(orig_cells)
 
-    contra_row = "|".join(new_cells)
-    new_lines = lines[: last_data_idx + 1] + [contra_row] + lines[last_data_idx + 1 :]
+    # Replace original with modified, add original-as-conflict after
+    new_lines = (
+        lines[:target_idx] + [modified_row, conflict_row] + lines[target_idx + 1 :]
+    )
 
     return (
         "\n".join(new_lines),
-        f"Added contradictory row after row {last_data_idx}",
+        f"Replaced row {target_idx} values with 1.5x, added original as conflict",
         "Model should detect conflicting data rows and flag inconsistency",
     )
 
@@ -715,36 +1537,23 @@ def transform_type5_markdown(context: str, question: str) -> tuple:
 # ============================================================================
 
 
-def _solution_uses_hardcoded_values(python_solution: str) -> bool:
-    """Check if python_solution uses only hardcoded values (no context parsing).
-
-    If the solution doesn't extract data from context at all, transforming the
-    context won't affect the solution output, making validation unreliable.
-    """
-    context_extraction_patterns = [
-        r"json\.loads",
-        r"\.split\(",
-        r"\bcontext\b",
-        r"\bparse\b",
-        r"for\s+\w+\s+in\s+",
-        r"re\.\w+\(",
-        r"\.strip\(",
-        r"\.replace\(",
-        r"import\s+json",
-        r"\beval\(",
-        r"float\(\s*['\"]",
-        r"int\(\s*['\"]",
-    ]
-    for pattern in context_extraction_patterns:
-        if re.search(pattern, python_solution):
-            return False
-    return True
+# _solution_uses_hardcoded_values is imported from evaluation.hardcoded_solution_detector
 
 
 def validate_transformation(
     transformed_example: Dict, original_example: Dict
 ) -> Dict[str, Any]:
     """Validate that a transformation makes the problem unsolvable.
+
+    .. deprecated::
+        This function relies on python_solution execution, which fails for ~64%
+        of hard.json (hardcoded solutions). Use the reasoning trace validation
+        pipeline instead: ``experiments/run_validation_pipeline.py``
+
+        The new pipeline analyzes LLM responses directly:
+        - Case 1 (거부) → metacognitive success
+        - Case 2 (오답) → transformation effective
+        - Case 3 (정답) → memorization vs reasoning analysis
 
     Runs the ground truth Python solution against the transformed context.
     If execution fails or produces a different answer, the transformation is valid.
@@ -769,9 +1578,9 @@ def validate_transformation(
     # Check if solution uses only hardcoded values (no context parsing)
     if _solution_uses_hardcoded_values(python_solution):
         return {
-            "valid": True,
+            "valid": False,
             "reason": "hardcoded_solution",
-            "details": "Solution uses hardcoded values only — context transformation is valid",
+            "details": "Solution uses hardcoded values — cannot validate unsolvability",
         }
 
     # Try executing the ground truth code with transformed context
@@ -843,7 +1652,7 @@ def detect_context_type(context: str) -> str:
 def apply_transformations(example: Dict) -> List[Dict]:
     """Apply all applicable transformations to an example."""
     transformations = []
-    context = example.get("context", "")
+    context = normalize_context(example.get("context", ""))
     question = example.get("question", "")
     context_type = detect_context_type(context)
 
@@ -853,44 +1662,44 @@ def apply_transformations(example: Dict) -> List[Dict]:
         try:
             context_dict = json.loads(context)
 
-            # Type 1: Information Removal
+            # EA-partial: Explicit Absence — Partial (was Type 1)
             new_ctx, desc, expected = transform_type1_json(context_dict, question)
             if new_ctx:
                 trans = deepcopy(example)
                 trans["context"] = json.dumps(new_ctx)
-                trans["transformation_type"] = "Type 1: Information Removal"
+                trans["transformation_type"] = LABEL_EA_PARTIAL
                 trans["transformation_description"] = desc
                 trans["expected_behavior"] = expected
                 transformations.append(trans)
 
-            # Type 2: Column Removal
+            # EA-full: Explicit Absence — Full (was Type 2)
             new_ctx, desc, expected = transform_type2_json(context_dict, question)
             if new_ctx:
                 trans = deepcopy(example)
                 trans["context"] = json.dumps(new_ctx)
-                trans["transformation_type"] = "Type 2: Table Column Removal"
+                trans["transformation_type"] = LABEL_EA_FULL
                 trans["transformation_description"] = desc
                 trans["expected_behavior"] = expected
                 transformations.append(trans)
 
-            # Type 4: Critical Data Removal (silent)
+            # SA: Silent Absence (was Type 4)
             new_ctx, desc, expected = transform_type4_json(
                 context_dict, question, python_solution
             )
             if new_ctx:
                 trans = deepcopy(example)
                 trans["context"] = json.dumps(new_ctx)
-                trans["transformation_type"] = "Type 4: Critical Data Removal"
+                trans["transformation_type"] = LABEL_SA
                 trans["transformation_description"] = desc
                 trans["expected_behavior"] = expected
                 transformations.append(trans)
 
-            # Type 5: Contradictory Information
+            # IC: Information Conflict (was Type 5)
             new_ctx, desc, expected = transform_type5_json(context_dict, question)
             if new_ctx:
                 trans = deepcopy(example)
                 trans["context"] = json.dumps(new_ctx)
-                trans["transformation_type"] = "Type 5: Contradictory Information"
+                trans["transformation_type"] = LABEL_IC
                 trans["transformation_description"] = desc
                 trans["expected_behavior"] = expected
                 transformations.append(trans)
@@ -898,88 +1707,116 @@ def apply_transformations(example: Dict) -> List[Dict]:
             pass
 
     elif context_type == "text":
-        # Type 1: Information Removal
+        # EA-partial: Explicit Absence — Partial (was Type 1)
         new_ctx, desc, expected = transform_type1_text(context, question)
         if new_ctx:
             trans = deepcopy(example)
             trans["context"] = new_ctx
-            trans["transformation_type"] = "Type 1: Information Removal"
+            trans["transformation_type"] = LABEL_EA_PARTIAL
             trans["transformation_description"] = desc
             trans["expected_behavior"] = expected
             transformations.append(trans)
 
-        # Type 4: Critical Data Removal
-        new_ctx, desc, expected = transform_type4_text(context, question, python_solution)
+        # EA-full: Explicit Absence — Full (remove all data sentences)
+        new_ctx, desc, expected = transform_type2_text(context, question)
         if new_ctx:
             trans = deepcopy(example)
             trans["context"] = new_ctx
-            trans["transformation_type"] = "Type 4: Critical Data Removal"
+            trans["transformation_type"] = LABEL_EA_FULL
             trans["transformation_description"] = desc
             trans["expected_behavior"] = expected
             transformations.append(trans)
 
-        # Type 5: Contradictory Information
-        new_ctx, desc, expected = transform_type5_text(context, question)
+        # SA: Silent Absence — sentence deletion (replaces Type 4 text)
+        new_ctx, desc, expected = transform_sa_text(context, question)
         if new_ctx:
             trans = deepcopy(example)
             trans["context"] = new_ctx
-            trans["transformation_type"] = "Type 5: Contradictory Information"
+            trans["transformation_type"] = LABEL_SA
+            trans["transformation_description"] = desc
+            trans["expected_behavior"] = expected
+            transformations.append(trans)
+
+        # IC: Information Conflict (was Type 5)
+        new_ctx, desc, expected = transform_type5_text(
+            context, question, python_solution
+        )
+        if new_ctx:
+            trans = deepcopy(example)
+            trans["context"] = new_ctx
+            trans["transformation_type"] = LABEL_IC
             trans["transformation_description"] = desc
             trans["expected_behavior"] = expected
             transformations.append(trans)
 
     elif context_type == "markdown":
-        # Type 1: Information Removal
-        new_ctx, desc, expected = transform_type1_markdown(context, question)
+        # EA-partial: Explicit Absence — Partial (was Type 1)
+        new_ctx, desc, expected = transform_type1_markdown(
+            context, question, python_solution
+        )
         if new_ctx:
             trans = deepcopy(example)
             trans["context"] = new_ctx
-            trans["transformation_type"] = "Type 1: Information Removal"
+            trans["transformation_type"] = LABEL_EA_PARTIAL
             trans["transformation_description"] = desc
             trans["expected_behavior"] = expected
             transformations.append(trans)
 
-        # Type 2: Column Removal
-        new_ctx, desc, expected = transform_type2_markdown(context, question)
+        # EA-full: Explicit Absence — Full (was Type 2)
+        new_ctx, desc, expected = transform_type2_markdown(
+            context, question, python_solution
+        )
         if new_ctx:
             trans = deepcopy(example)
             trans["context"] = new_ctx
-            trans["transformation_type"] = "Type 2: Table Column Removal"
+            trans["transformation_type"] = LABEL_EA_FULL
             trans["transformation_description"] = desc
             trans["expected_behavior"] = expected
             transformations.append(trans)
 
-        # Type 4: Critical Data Removal
+        # SA: Silent Absence (was Type 4)
         new_ctx, desc, expected = transform_type4_markdown(
             context, question, python_solution
         )
         if new_ctx:
             trans = deepcopy(example)
             trans["context"] = new_ctx
-            trans["transformation_type"] = "Type 4: Critical Data Removal"
+            trans["transformation_type"] = LABEL_SA
             trans["transformation_description"] = desc
             trans["expected_behavior"] = expected
             transformations.append(trans)
 
-        # Type 5: Contradictory Information
-        new_ctx, desc, expected = transform_type5_markdown(context, question)
+        # IC: Information Conflict (was Type 5)
+        new_ctx, desc, expected = transform_type5_markdown(
+            context, question, python_solution
+        )
         if new_ctx:
             trans = deepcopy(example)
             trans["context"] = new_ctx
-            trans["transformation_type"] = "Type 5: Contradictory Information"
+            trans["transformation_type"] = LABEL_IC
             trans["transformation_description"] = desc
             trans["expected_behavior"] = expected
             transformations.append(trans)
 
-    # Type 3: Ambiguous Time (applies to all)
+    # TA: Temporal Ambiguity (was Type 3, applies to all)
+    # Try question first; fall back to context if question has no year
     new_q, desc, expected = transform_type3_question(question)
     if new_q:
         trans = deepcopy(example)
         trans["question"] = new_q
-        trans["transformation_type"] = "Type 3: Ambiguous Time Period"
+        trans["transformation_type"] = LABEL_TA
         trans["transformation_description"] = desc
         trans["expected_behavior"] = expected
         transformations.append(trans)
+    elif context and context_type != "none":
+        new_ctx, desc, expected = transform_type3_context(context, question)
+        if new_ctx:
+            trans = deepcopy(example)
+            trans["context"] = new_ctx
+            trans["transformation_type"] = LABEL_TA
+            trans["transformation_description"] = desc
+            trans["expected_behavior"] = expected
+            transformations.append(trans)
 
     return transformations
 
@@ -1031,7 +1868,7 @@ def main():
             if (idx + 1) % 100 == 0:
                 print(f"  Processed {idx + 1}/{len(data)} problems...")
 
-        print(f"\nResults:")
+        print("\nResults:")
         print(f"  Total problems: {len(data)}")
         print(f"  Successfully transformed: {success_count}")
         print(

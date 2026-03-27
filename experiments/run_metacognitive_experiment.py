@@ -23,31 +23,25 @@ import json
 import sys
 import os
 import re
-import time
 import argparse
-import html as html_module
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import asdict
 from dotenv import load_dotenv
 
 # Add evaluation directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "evaluation"))
 
-from config import ConfigManager, ModelConfig
+from config import ModelConfig
 from model_runner import OpenAIProvider, AnthropicProvider, GoogleProvider
 
-from error_analysis import ErrorCategory, ErrorClassification, ModelType, MODEL_REGISTRY
-from error_analysis.error_classifier import ErrorClassifier, ClassificationResult
+from error_analysis import MODEL_REGISTRY
+from error_analysis.error_classifier import ErrorClassifier
 from error_analysis.error_taxonomy import BUDGET_MODEL_SETS
 
 from metacognitive_metrics import (
     MetacognitiveResult,
-    MetacognitiveMetrics,
     ResponseType,
-    TransformationType,
-    PromptStrategy,
     compute_metrics,
     compute_metrics_by_dimension,
     compute_cross_phase_metrics,
@@ -56,9 +50,9 @@ from refusal_detector import RefusalDetector
 
 # Import transformation utilities
 sys.path.insert(0, str(Path(__file__).parent))
-from apply_transformations_full import (
+from apply_transformations_full import (  # noqa: E402
     apply_transformations,
-    detect_context_type,
+    normalize_transformation_label,
     validate_transformation,
 )
 
@@ -291,8 +285,14 @@ def solution():
 PROMPT_SYSTEMS = {
     "standard": {"COT": COT_SYSTEM_STANDARD, "POT": POT_SYSTEM_STANDARD},
     "metacognitive": {"COT": COT_SYSTEM_METACOGNITIVE, "POT": POT_SYSTEM_METACOGNITIVE},
-    "self_verification": {"COT": COT_SYSTEM_SELF_VERIFICATION, "POT": POT_SYSTEM_SELF_VERIFICATION},
-    "contradiction_aware": {"COT": COT_SYSTEM_CONTRADICTION_AWARE, "POT": POT_SYSTEM_CONTRADICTION_AWARE},
+    "self_verification": {
+        "COT": COT_SYSTEM_SELF_VERIFICATION,
+        "POT": POT_SYSTEM_SELF_VERIFICATION,
+    },
+    "contradiction_aware": {
+        "COT": COT_SYSTEM_CONTRADICTION_AWARE,
+        "POT": POT_SYSTEM_CONTRADICTION_AWARE,
+    },
 }
 
 
@@ -377,6 +377,7 @@ class MetacognitiveExperiment:
         if enable_rag:
             try:
                 from rag_enhancer import RAGEnhancer
+
                 eval_dir = Path(__file__).parent.parent / "evaluation"
                 self.rag_enhancer = RAGEnhancer(eval_dir / "function_retriever.py")
                 print("[OK] RAG enhancer loaded")
@@ -441,7 +442,9 @@ class MetacognitiveExperiment:
 
         return system_prompt, user_prompt
 
-    def _extract_answer(self, response: str) -> Tuple[Any, Optional[str], Optional[str]]:
+    def _extract_answer(
+        self, response: str
+    ) -> Tuple[Any, Optional[str], Optional[str]]:
         """Extract answer from model response (COT or POT)"""
         if self.method == "COT":
             return self._extract_cot_answer(response), None, None
@@ -478,7 +481,9 @@ class MetacognitiveExperiment:
                 pass
         return None
 
-    def _execute_pot_code(self, response: str) -> Tuple[Any, Optional[str], Optional[str]]:
+    def _execute_pot_code(
+        self, response: str
+    ) -> Tuple[Any, Optional[str], Optional[str]]:
         """Execute POT code and return (answer, code, error)"""
         code_patterns = [r"```python\s*(.*?)```", r"```\s*(.*?)```"]
         code = None
@@ -496,7 +501,9 @@ class MetacognitiveExperiment:
 
         if "def solution():" not in code:
             code = "def solution():\n    # Define variables name and value\n" + code
-        if "solution()" not in code or not re.search(r"^\s*solution\(\)", code, re.MULTILINE):
+        if "solution()" not in code or not re.search(
+            r"^\s*solution\(\)", code, re.MULTILINE
+        ):
             code = code + "\n\nresult = solution()"
 
         try:
@@ -526,7 +533,9 @@ class MetacognitiveExperiment:
         except (ValueError, TypeError):
             return str(pred).strip().lower() == str(truth).strip().lower()
 
-    def _calculate_cost(self, input_tokens: int, output_tokens: int, model_name: str) -> float:
+    def _calculate_cost(
+        self, input_tokens: int, output_tokens: int, model_name: str
+    ) -> float:
         """Calculate API cost"""
         model_info = MODEL_REGISTRY[model_name]
         input_cost = (input_tokens / 1_000_000) * model_info.cost_per_million_input
@@ -534,7 +543,7 @@ class MetacognitiveExperiment:
         return round(input_cost + output_cost, 6)
 
     @staticmethod
-    def _truncate(text: str, max_len: int = 500) -> str:
+    def _truncate(text: str, max_len: int = 50000) -> str:
         """Truncate text for storage"""
         if len(text) <= max_len:
             return text
@@ -569,7 +578,9 @@ class MetacognitiveExperiment:
         current_context = example.get("context", "")
         ground_truth = example.get("ground_truth")
         ctx_original = self._truncate(original_context or current_context)
-        ctx_transformed = self._truncate(current_context) if transformation_type != "original" else ""
+        ctx_transformed = (
+            self._truncate(current_context) if transformation_type != "original" else ""
+        )
 
         try:
             response = await provider.call_model(mini_ex, full_prompt)
@@ -623,7 +634,7 @@ class MetacognitiveExperiment:
                 ground_truth=ground_truth,
             )
 
-        except Exception as e:
+        except Exception:
             return MetacognitiveResult(
                 example_id=example.get("question_id", "unknown"),
                 model_name=model_name,
@@ -648,7 +659,9 @@ class MetacognitiveExperiment:
     ) -> List[MetacognitiveResult]:
         """Phase A: Baseline accuracy on original problems"""
         print(f"\n{'=' * 80}")
-        print(f"Phase A: Baseline Accuracy (n={len(examples)}, strategy={prompt_strategy})")
+        print(
+            f"Phase A: Baseline Accuracy (n={len(examples)}, strategy={prompt_strategy})"
+        )
         print(f"{'=' * 80}")
 
         results = []
@@ -663,7 +676,11 @@ class MetacognitiveExperiment:
             for model_name in self.models:
                 current += 1
                 model_info = MODEL_REGISTRY[model_name]
-                print(f"  [{current}/{total}] {model_info.display_name}...", end=" ", flush=True)
+                print(
+                    f"  [{current}/{total}] {model_info.display_name}...",
+                    end=" ",
+                    flush=True,
+                )
 
                 result = await self.evaluate_single(
                     example, model_name, prompt_strategy, "original"
@@ -683,7 +700,9 @@ class MetacognitiveExperiment:
     ) -> List[MetacognitiveResult]:
         """Phase B: Metacognitive test on transformed problems"""
         print(f"\n{'=' * 80}")
-        print(f"Phase B: Metacognitive Test (n={len(examples)}, strategy={prompt_strategy})")
+        print(
+            f"Phase B: Metacognitive Test (n={len(examples)}, strategy={prompt_strategy})"
+        )
         print(f"{'=' * 80}")
 
         results = []
@@ -703,8 +722,12 @@ class MetacognitiveExperiment:
             # Filter by transformation type if specified
             if transformation_types:
                 transformed_list = [
-                    t for t in transformed_list
-                    if any(tt in t.get("transformation_type", "") for tt in transformation_types)
+                    t
+                    for t in transformed_list
+                    if any(
+                        tt in t.get("transformation_type", "")
+                        for tt in transformation_types
+                    )
                 ]
 
             original_context = example.get("context", "")
@@ -716,7 +739,10 @@ class MetacognitiveExperiment:
                 # Validate transformation
                 validation = validate_transformation(trans, example)
                 if not validation["valid"]:
-                    print(f"  [INVALID] {eid} {trans_type}: {validation['reason']}")
+                    if validation["reason"] == "hardcoded_solution":
+                        print(f"  [SKIP-HC] {eid} {trans_type}: hardcoded solution")
+                    else:
+                        print(f"  [INVALID] {eid} {trans_type}: {validation['reason']}")
                     continue
 
                 transform_count += 1
@@ -728,7 +754,10 @@ class MetacognitiveExperiment:
                     print(f"    {model_info.display_name}...", end=" ", flush=True)
 
                     result = await self.evaluate_single(
-                        trans, model_name, prompt_strategy, trans_type,
+                        trans,
+                        model_name,
+                        prompt_strategy,
+                        trans_type,
                         original_context=original_context,
                         transformation_description=trans_desc,
                     )
@@ -742,7 +771,9 @@ class MetacognitiveExperiment:
                     }.get(result.response_type, "?")
                     print(f"[{icon}] (${result.cost_usd:.4f})")
 
-        print(f"\nPhase B Summary: {transform_count} transformations, {skip_count} skipped")
+        print(
+            f"\nPhase B Summary: {transform_count} transformations, {skip_count} skipped"
+        )
         return results
 
     async def run_phase_c(
@@ -756,7 +787,9 @@ class MetacognitiveExperiment:
             return []
 
         print(f"\n{'=' * 80}")
-        print(f"Phase C: RAG Impact Test (n={len(examples)}, strategy={prompt_strategy})")
+        print(
+            f"Phase C: RAG Impact Test (n={len(examples)}, strategy={prompt_strategy})"
+        )
         print(f"{'=' * 80}")
 
         # Phase C reuses Phase B logic with RAG already enabled
@@ -775,7 +808,13 @@ def analyze_phase_d(results_dir: Path) -> Dict[str, Any]:
     for fp in result_files:
         with open(fp, "r", encoding="utf-8") as f:
             data = json.load(f)
-        phase_results = [MetacognitiveResult.from_dict(r) for r in data.get("results", [])]
+        phase_results = []
+        for r in data.get("results", []):
+            result = MetacognitiveResult.from_dict(r)
+            result.transformation_type = normalize_transformation_label(
+                result.transformation_type
+            )
+            phase_results.append(result)
         all_results.extend(phase_results)
         print(f"  Loaded {len(phase_results)} results from {fp.name}")
 
@@ -790,7 +829,9 @@ def analyze_phase_d(results_dir: Path) -> Dict[str, Any]:
     # Compute cross-phase metrics (Phase A + B merged) when both available
     if phase_a_results and phase_b_results:
         model_metrics = compute_cross_phase_metrics(phase_a_results, phase_b_results)
-        print(f"  Cross-phase metrics: {len(phase_a_results)} solvable + {len(phase_b_results)} unsolvable")
+        print(
+            f"  Cross-phase metrics: {len(phase_a_results)} solvable + {len(phase_b_results)} unsolvable"
+        )
     else:
         model_metrics = compute_metrics(phase_b_results)
         print(f"  Phase B only metrics: {len(phase_b_results)} unsolvable")
@@ -799,7 +840,9 @@ def analyze_phase_d(results_dir: Path) -> Dict[str, Any]:
     strategy_metrics = compute_metrics_by_dimension(phase_b_results, "prompt_strategy")
 
     # Compute metrics by transformation type
-    transform_metrics = compute_metrics_by_dimension(phase_b_results, "transformation_type")
+    transform_metrics = compute_metrics_by_dimension(
+        phase_b_results, "transformation_type"
+    )
 
     # Cost-performance analysis
     cost_perf = {}
@@ -821,7 +864,9 @@ def analyze_phase_d(results_dir: Path) -> Dict[str, Any]:
         best_score = max(cost_perf.items(), key=lambda x: x[1]["mc_score"])
         best_efficiency = max(cost_perf.items(), key=lambda x: x[1]["mc_per_dollar"])
         print(f"\n  Best MC Score: {best_score[0]} ({best_score[1]['mc_score']:.3f})")
-        print(f"  Best Efficiency: {best_efficiency[0]} ({best_efficiency[1]['mc_per_dollar']:.1f} MC/$)")
+        print(
+            f"  Best Efficiency: {best_efficiency[0]} ({best_efficiency[1]['mc_per_dollar']:.1f} MC/$)"
+        )
 
     analysis = {
         "timestamp": datetime.now().isoformat(),
@@ -915,7 +960,7 @@ def save_results(
     # Print baseline accuracy for Phase A
     baseline_results = [r for r in results if r.transformation_type == "original"]
     if baseline_results:
-        print(f"\nBaseline Accuracy:")
+        print("\nBaseline Accuracy:")
         by_model: Dict[str, List[MetacognitiveResult]] = {}
         for r in baseline_results:
             by_model.setdefault(r.model_name, []).append(r)
@@ -959,7 +1004,13 @@ async def main():
     )
     parser.add_argument(
         "--prompt-strategy",
-        choices=["standard", "metacognitive", "self_verification", "contradiction_aware", "all"],
+        choices=[
+            "standard",
+            "metacognitive",
+            "self_verification",
+            "contradiction_aware",
+            "all",
+        ],
         default="metacognitive",
         help="Prompt strategy for Phase B/C",
     )
@@ -999,7 +1050,10 @@ async def main():
         results_dir = Path(args.results_dir) if args.results_dir else output_dir
         analysis = analyze_phase_d(results_dir)
         if analysis:
-            analysis_path = output_dir / f"phase_D_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            analysis_path = (
+                output_dir
+                / f"phase_D_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            )
             with open(analysis_path, "w", encoding="utf-8") as f:
                 json.dump(analysis, f, indent=2, ensure_ascii=False)
             print(f"\n[SAVED] {analysis_path}")
@@ -1031,7 +1085,12 @@ async def main():
 
     # Determine prompt strategies to run
     if args.prompt_strategy == "all":
-        strategies = ["standard", "metacognitive", "self_verification", "contradiction_aware"]
+        strategies = [
+            "standard",
+            "metacognitive",
+            "self_verification",
+            "contradiction_aware",
+        ]
     else:
         strategies = [args.prompt_strategy]
 
@@ -1050,7 +1109,9 @@ async def main():
                 examples, strategy, args.transformation_types
             )
             save_results(
-                results_b, f"B_{strategy}", output_dir,
+                results_b,
+                f"B_{strategy}",
+                output_dir,
                 extra_meta={"prompt_strategy": strategy},
             )
             all_results.extend(results_b)
@@ -1061,8 +1122,11 @@ async def main():
             experiment.enable_rag = True
             try:
                 from rag_enhancer import RAGEnhancer
+
                 eval_dir = Path(__file__).parent.parent / "evaluation"
-                experiment.rag_enhancer = RAGEnhancer(eval_dir / "function_retriever.py")
+                experiment.rag_enhancer = RAGEnhancer(
+                    eval_dir / "function_retriever.py"
+                )
             except Exception as e:
                 print(f"[ERROR] Cannot load RAG: {e}")
                 return
@@ -1070,7 +1134,9 @@ async def main():
         for strategy in strategies:
             results_c = await experiment.run_phase_c(examples, strategy)
             save_results(
-                results_c, f"C_{strategy}", output_dir,
+                results_c,
+                f"C_{strategy}",
+                output_dir,
                 extra_meta={"prompt_strategy": strategy, "rag_enabled": True},
             )
             all_results.extend(results_c)
@@ -1078,12 +1144,14 @@ async def main():
     # Final summary
     total_cost = sum(r.cost_usd for r in all_results)
     print(f"\n{'=' * 80}")
-    print(f"Experiment Complete")
+    print("Experiment Complete")
     print(f"  Total evaluations: {len(all_results)}")
     print(f"  Total cost: ${total_cost:.4f}")
     print(f"  Results saved to: {output_dir}")
     print(f"{'=' * 80}")
-    print(f"\nNext: python experiments/generate_metacognitive_dashboard.py --results-dir {output_dir}")
+    print(
+        f"\nNext: python experiments/generate_metacognitive_dashboard.py --results-dir {output_dir}"
+    )
 
 
 if __name__ == "__main__":

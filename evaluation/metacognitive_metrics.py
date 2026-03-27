@@ -23,8 +23,18 @@ class ResponseType(str, Enum):
 
 
 class TransformationType(str, Enum):
-    """Types of data transformation applied to create unsolvable problems"""
+    """Types of data transformation applied to create unsolvable problems.
 
+    v2 taxonomy: organized by metacognitive ability × signal strength.
+    """
+
+    EA_PARTIAL = "EA-partial: Explicit Absence (Partial)"
+    EA_FULL = "EA-full: Explicit Absence (Full)"
+    SA = "SA: Silent Absence"
+    IC = "IC: Information Conflict"
+    TA = "TA: Temporal Ambiguity"
+
+    # Legacy aliases kept for backward compatibility with stored results
     INFO_REMOVAL = "Type 1: Information Removal"
     COLUMN_REMOVAL = "Type 2: Table Column Removal"
     AMBIGUOUS_TIME = "Type 3: Ambiguous Time Period"
@@ -206,7 +216,9 @@ class MetacognitiveMetrics:
         }
 
 
-def compute_metrics(results: List[MetacognitiveResult]) -> Dict[str, MetacognitiveMetrics]:
+def compute_metrics(
+    results: List[MetacognitiveResult],
+) -> Dict[str, MetacognitiveMetrics]:
     """Compute aggregated metacognitive metrics per model.
 
     Args:
@@ -219,7 +231,9 @@ def compute_metrics(results: List[MetacognitiveResult]) -> Dict[str, Metacogniti
 
     for r in results:
         if r.model_name not in metrics_by_model:
-            metrics_by_model[r.model_name] = MetacognitiveMetrics(model_name=r.model_name)
+            metrics_by_model[r.model_name] = MetacognitiveMetrics(
+                model_name=r.model_name
+            )
 
         m = metrics_by_model[r.model_name]
         m.total_unsolvable += 1
@@ -299,4 +313,7 @@ def compute_metrics_by_dimension(
         key = str(getattr(r, dimension, "unknown"))
         grouped.setdefault(key, []).append(r)
 
-    return {dim_val: compute_metrics(dim_results) for dim_val, dim_results in grouped.items()}
+    return {
+        dim_val: compute_metrics(dim_results)
+        for dim_val, dim_results in grouped.items()
+    }
