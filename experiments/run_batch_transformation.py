@@ -44,6 +44,9 @@ from apply_transformations_full import (  # noqa: E402
     transform_type5_json,
     transform_type5_markdown,
     transform_type5_text,
+    transform_question_ea_partial,
+    transform_question_ic,
+    transform_question_sa,
 )
 
 logging.basicConfig(
@@ -77,6 +80,67 @@ def _try_transform(
         return False, None, None, f"error:{str(e)[:80]}"
 
 
+def _transform_question_only(
+    question: str, python_solution: str
+) -> Dict[str, Dict[str, Any]]:
+    """Apply question-level transformations for context-less problems.
+
+    Returns results with Q-EA-partial, Q-SA, Q-IC keys plus
+    empty EA-full and TA entries.
+    """
+    results: Dict[str, Dict[str, Any]] = {}
+
+    # Q-EA-partial
+    ok, new_q, desc, reason = _try_transform(
+        transform_question_ea_partial, question, python_solution
+    )
+    if ok:
+        results["EA-partial"] = {
+            "success": True,
+            "question_transformed": new_q,
+            "description": f"[Q] {desc}",
+            "is_question_transform": True,
+        }
+    else:
+        results["EA-partial"] = {"success": False, "reason": reason or "no_match"}
+
+    # EA-full: not applicable for question-only
+    results["EA-full"] = {"success": False, "reason": "question_only"}
+
+    # Q-SA
+    ok, new_q, desc, reason = _try_transform(
+        transform_question_sa, question, python_solution
+    )
+    if ok:
+        results["SA"] = {
+            "success": True,
+            "question_transformed": new_q,
+            "description": f"[Q] {desc}",
+            "is_question_transform": True,
+        }
+    else:
+        results["SA"] = {"success": False, "reason": reason or "no_match"}
+
+    # Q-IC
+    ok, new_q, desc, reason = _try_transform(
+        transform_question_ic, question, python_solution
+    )
+    if ok:
+        results["IC"] = {
+            "success": True,
+            "question_transformed": new_q,
+            "description": f"[Q] {desc}",
+            "is_question_transform": True,
+        }
+    else:
+        results["IC"] = {"success": False, "reason": reason or "no_match"}
+
+    # TA: not applicable for question-only (already has no context)
+    results["TA"] = {"success": False, "reason": "question_only"}
+
+    return results
+
+
 def transform_single_problem(example: Dict) -> Dict[str, Any]:
     """Apply all 5 transformation types to a single problem.
 
@@ -90,9 +154,8 @@ def transform_single_problem(example: Dict) -> Dict[str, Any]:
     results: Dict[str, Dict[str, Any]] = {}
 
     if ctx_type == "none":
-        for key in TYPE_KEYS:
-            results[key] = {"success": False, "reason": "no_context"}
-        return results
+        # Question-only problem: apply question transformations
+        return _transform_question_only(question, python_solution)
 
     # --- EA-partial ---
     if ctx_type == "json":

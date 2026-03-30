@@ -281,15 +281,23 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
     hardcoded_badge = (
         '<span class="badge badge-warn">하드코딩</span>' if is_hardcoded else ""
     )
+    # Detect question-only problem
+    has_question_transform = any(
+        transformations.get(k, {}).get("is_question_transform") for k in TYPE_KEYS
+    )
+    qonly_badge = (
+        '<span class="badge badge-qonly">Q변환</span>' if has_question_transform else ""
+    )
 
     return f"""
-    <div class="problem-card" id="card-{qid}" data-qid="{qid}" data-index="{idx}">
+    <div class="problem-card{"  q-only" if has_question_transform else ""}" id="card-{qid}" data-qid="{qid}" data-index="{idx}">
       <div class="card-header" onclick="toggleCard('{qid}')">
         <div class="card-title">
           <span class="card-index">#{idx}</span>
           <span class="card-qid">{qid}</span>
           <span class="badge badge-format">{ctx_format}</span>
           {hardcoded_badge}
+          {qonly_badge}
           <span class="badge badge-count">{len(success_types)}/{len(TYPE_KEYS)}</span>
           <span class="review-status" id="review-{qid}"></span>
         </div>
@@ -434,7 +442,9 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .badge {{ display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }}
 .badge-format {{ background: #1e3a5f; color: var(--blue); }}
 .badge-warn {{ background: #3d2608; color: var(--amber); }}
+.badge-qonly {{ background: #1e1e3d; color: var(--purple); }}
 .badge-count {{ background: var(--surface2); color: var(--text2); }}
+.problem-card.q-only {{ border-left: 3px solid var(--purple); }}
 
 /* Question & context */
 .question-box {{ margin-bottom: 10px; }}

@@ -1533,6 +1533,214 @@ def transform_type5_markdown(
 
 
 # ============================================================================
+# QUESTION-ONLY TRANSFORMATIONS
+# (For problems where context is empty and all data is in the question)
+# ============================================================================
+
+LABEL_Q_EA_PARTIAL = "Q-EA-partial: Question Explicit Absence (Partial)"
+LABEL_Q_SA = "Q-SA: Question Silent Absence"
+LABEL_Q_IC = "Q-IC: Question Information Conflict"
+
+
+def transform_question_ea_partial(question: str, python_solution: str = "") -> tuple:
+    """EA-partial for question-only problems.
+
+    Replaces a solution-critical number in the question with [DATA MISSING].
+    Prioritizes values used in the answer chain (via BFS trace).
+
+    Returns:
+        (new_question, description, expected_behavior) or (None, None, None)
+    """
+    number_pattern = r"\$?\d+(?:,\d{3})*(?:\.\d+)?%?"
+    matches = list(re.finditer(number_pattern, question))
+    if not matches:
+        return None, None, None
+
+    critical_nums = (
+        _extract_critical_solution_values(python_solution) if python_solution else set()
+    )
+
+    def _match_score(m: re.Match) -> tuple:
+        val = m.group(0)
+        val_norm = _extract_numbers_from_text(val)
+        is_critical = bool(val_norm & critical_nums) if critical_nums else False
+        # Skip year-like numbers and very small numbers
+        clean = val.replace("$", "").replace(",", "").replace("%", "")
+        try:
+            num_val = float(clean)
+        except ValueError:
+            return (False, False, 0)
+        is_year = 1900 <= num_val <= 2100 and num_val == int(num_val)
+        is_small = num_val <= 1 and "%" not in val and "$" not in val
+        return (is_critical and not is_year, not is_year and not is_small, num_val)
+
+    scored = sorted(matches, key=_match_score, reverse=True)
+    target = scored[0]
+    target_val = target.group(0)
+
+    # Verify it's a meaningful target
+    score = _match_score(target)
+    if not score[1]:  # all candidates are years or trivial
+        return None, None, None
+
+    new_question = (
+        question[: target.start()] + "[DATA MISSING]" + question[target.end() :]
+    )
+    return (
+        new_question,
+        f"Removed from question: {target_val}",
+        "Model should recognize missing data in question and refuse to answer",
+    )
+
+
+def transform_question_sa(question: str, python_solution: str = "") -> tuple:
+    """SA (Silent Absence) for question-only problems.
+
+    Removes a clause or phrase containing a solution-critical number,
+    making the question read naturally but with missing information.
+
+    Strategy: Split question into clauses (by comma, 'and', semicolon),
+    remove the clause with the most critical data.
+
+    Returns:
+        (new_question, description, expected_behavior) or (None, None, None)
+    """
+    # Split into clauses by commas, semicolons, "and" connectors
+    clause_pattern = r"[,;]\s*|\s+and\s+"
+    parts = re.split(clause_pattern, question)
+
+    if len(parts) <= 2:
+        # Too few clauses — try sentence-level if multi-sentence
+        sentences = re.split(r"(?<=[.!?])\s+", question.strip())
+        if len(sentences) <= 1:
+            return None, None, None
+        parts = sentences
+        is_sentence = True
+    else:
+        is_sentence = False
+
+    critical_nums = (
+        _extract_critical_solution_values(python_solution) if python_solution else set()
+    )
+
+    def _clause_score(part: str) -> tuple:
+        nums = _extract_numbers_from_text(part)
+        has_critical = bool(nums & critical_nums) if critical_nums else False
+        has_number = bool(re.search(r"\d", part))
+        # Don't remove the actual question part (ends with ?)
+        is_question_part = "?" in part
+        return (
+            has_critical and not is_question_part,
+            has_number and not is_question_part,
+            len(nums),
+        )
+
+    scored = [(i, _clause_score(p)) for i, p in enumerate(parts)]
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    best_idx, best_score = scored[0]
+    if not best_score[1]:  # no clause has numbers
+        return None, None, None
+
+    removed = parts[best_idx].strip()
+    remaining = [p for i, p in enumerate(parts) if i != best_idx]
+
+    if is_sentence:
+        new_question = " ".join(remaining)
+    else:
+        new_question = ", ".join(remaining)
+        # Clean up double commas, leading commas
+        new_question = re.sub(r",\s*,", ",", new_question)
+        new_question = re.sub(r"^\s*,\s*", "", new_question)
+
+    if not new_question.strip():
+        return None, None, None
+
+    return (
+        new_question.strip(),
+        f"Silently removed clause: {removed[:80]}",
+        "Model should detect missing critical information in question",
+    )
+
+
+def transform_question_ic(question: str, python_solution: str = "") -> tuple:
+    """IC (Information Conflict) for question-only problems.
+
+    Inserts a contradictory value (1.5x) for a solution-critical number
+    by adding a parenthetical alternative.
+
+    Example: "$500,000" → "$500,000 (however, a revised estimate suggests $750,000)"
+
+    Returns:
+        (new_question, description, expected_behavior) or (None, None, None)
+    """
+    number_pattern = r"\$?\d+(?:,\d{3})*(?:\.\d+)?%?"
+    matches = list(re.finditer(number_pattern, question))
+    if not matches:
+        return None, None, None
+
+    critical_nums = (
+        _extract_critical_solution_values(python_solution) if python_solution else set()
+    )
+
+    def _match_score(m: re.Match) -> tuple:
+        val = m.group(0)
+        val_norm = _extract_numbers_from_text(val)
+        is_critical = bool(val_norm & critical_nums) if critical_nums else False
+        clean = val.replace("$", "").replace(",", "").replace("%", "")
+        try:
+            num_val = float(clean)
+        except ValueError:
+            return (False, False, 0)
+        is_year = 1900 <= num_val <= 2100 and num_val == int(num_val)
+        is_descriptor = num_val <= 1 and "%" not in val and "$" not in val
+        return (is_critical and not is_year, not is_year and not is_descriptor, num_val)
+
+    scored = sorted(matches, key=_match_score, reverse=True)
+    target = scored[0]
+    target_val = target.group(0)
+
+    score = _match_score(target)
+    if not score[1]:
+        return None, None, None
+
+    # Create contradictory value
+    clean = target_val.replace("$", "").replace(",", "").replace("%", "")
+    try:
+        num_val = float(clean)
+    except ValueError:
+        return None, None, None
+
+    contra_val = num_val * 1.5
+
+    # Format to match original style
+    has_dollar = "$" in target_val
+    has_percent = "%" in target_val
+    has_comma = "," in target_val
+
+    if "." in clean:
+        decimal_places = len(clean.split(".")[-1])
+        contra_str = f"{contra_val:.{decimal_places}f}"
+    else:
+        contra_int = int(contra_val)
+        contra_str = f"{contra_int:,}" if has_comma else str(contra_int)
+
+    if has_dollar:
+        contra_str = "$" + contra_str
+    if has_percent:
+        contra_str = contra_str + "%"
+
+    insert_text = f"{target_val} (however, a revised estimate suggests {contra_str})"
+    new_question = question[: target.start()] + insert_text + question[target.end() :]
+
+    return (
+        new_question,
+        f"Added conflict in question: {target_val} vs {contra_str}",
+        "Model should detect contradictory data in question and flag inconsistency",
+    )
+
+
+# ============================================================================
 # TRANSFORMATION VALIDATION
 # ============================================================================
 
