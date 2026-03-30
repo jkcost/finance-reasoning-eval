@@ -16,7 +16,6 @@ import argparse
 import json
 import logging
 import sys
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -25,11 +24,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "evaluation"))
 
 from apply_transformations_full import (
-    LABEL_EA_FULL,
-    LABEL_EA_PARTIAL,
-    LABEL_IC,
-    LABEL_SA,
-    LABEL_TA,
     detect_context_type,
     normalize_context,
     transform_type1_json,
@@ -42,13 +36,19 @@ from apply_transformations_full import (
     transform_type3_question,
     transform_type4_json,
     transform_type4_markdown,
-    transform_type4_text,
-    transform_type5_json,
-    transform_type5_markdown,
-    transform_type5_text,
     transform_sa_text,
 )
 from hardcoded_solution_detector import _solution_uses_hardcoded_values
+from ic_difficulty_ladder import (  # noqa: E402
+    transform_ic_l1_json,
+    transform_ic_l1_text,
+    transform_ic_l2_text,
+    transform_ic_l3_json,
+    transform_ic_l3_markdown,
+    transform_ic_l3_text,
+    transform_ic_l4_json,
+    transform_ic_l4_text,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,7 +57,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TYPE_KEYS = ["EA-partial", "EA-full", "SA", "IC", "TA"]
+TYPE_KEYS = ["EA-partial", "EA-full", "SA", "IC-L1", "IC-L2", "IC-L3", "IC-L4", "TA"]
 
 
 def _try_transform(fn, *args) -> Dict[str, Any]:
@@ -68,7 +68,9 @@ def _try_transform(fn, *args) -> Dict[str, Any]:
             return {
                 "success": True,
                 "context_transformed": (
-                    json.dumps(result[0]) if isinstance(result[0], dict) else str(result[0])
+                    json.dumps(result[0])
+                    if isinstance(result[0], dict)
+                    else str(result[0])
                 ),
                 "description": result[1] or "",
                 "expected_behavior": result[2] or "",
@@ -109,11 +111,30 @@ def transform_problem(example: Dict) -> Dict[str, Dict[str, Any]]:
             transformations["SA"] = _try_transform(
                 transform_type4_json, ctx_dict, question, python_solution
             )
-            transformations["IC"] = _try_transform(
-                transform_type5_json, ctx_dict, question
+            # IC L1-L4
+            transformations["IC-L1"] = _try_transform(
+                transform_ic_l1_json, ctx_dict, question
+            )
+            transformations["IC-L2"] = {
+                "success": False,
+                "reason": "json_not_supported",
+            }
+            transformations["IC-L3"] = _try_transform(
+                transform_ic_l3_json, ctx_dict, question
+            )
+            transformations["IC-L4"] = _try_transform(
+                transform_ic_l4_json, ctx_dict, question
             )
         except (json.JSONDecodeError, TypeError):
-            for t in ["EA-partial", "EA-full", "SA", "IC"]:
+            for t in [
+                "EA-partial",
+                "EA-full",
+                "SA",
+                "IC-L1",
+                "IC-L2",
+                "IC-L3",
+                "IC-L4",
+            ]:
                 transformations[t] = {"success": False, "reason": "json_parse_error"}
 
     elif context_type == "text":
@@ -123,12 +144,19 @@ def transform_problem(example: Dict) -> Dict[str, Dict[str, Any]]:
         transformations["EA-full"] = _try_transform(
             transform_type2_text, context, question
         )
-        # SA for text: sentence deletion
-        transformations["SA"] = _try_transform(
-            transform_sa_text, context, question
+        transformations["SA"] = _try_transform(transform_sa_text, context, question)
+        # IC L1-L4
+        transformations["IC-L1"] = _try_transform(
+            transform_ic_l1_text, context, question, python_solution
         )
-        transformations["IC"] = _try_transform(
-            transform_type5_text, context, question, python_solution
+        transformations["IC-L2"] = _try_transform(
+            transform_ic_l2_text, context, question, python_solution
+        )
+        transformations["IC-L3"] = _try_transform(
+            transform_ic_l3_text, context, question, python_solution
+        )
+        transformations["IC-L4"] = _try_transform(
+            transform_ic_l4_text, context, question, python_solution
         )
 
     elif context_type == "markdown":
@@ -141,12 +169,22 @@ def transform_problem(example: Dict) -> Dict[str, Dict[str, Any]]:
         transformations["SA"] = _try_transform(
             transform_type4_markdown, context, question, python_solution
         )
-        transformations["IC"] = _try_transform(
-            transform_type5_markdown, context, question, python_solution
+        # IC L1-L4 for markdown
+        transformations["IC-L1"] = _try_transform(
+            transform_ic_l1_text, context, question, python_solution
+        )
+        transformations["IC-L2"] = _try_transform(
+            transform_ic_l2_text, context, question, python_solution
+        )
+        transformations["IC-L3"] = _try_transform(
+            transform_ic_l3_markdown, context, question, python_solution
+        )
+        transformations["IC-L4"] = _try_transform(
+            transform_ic_l4_text, context, question, python_solution
         )
 
     else:
-        for t in ["EA-partial", "EA-full", "SA", "IC"]:
+        for t in ["EA-partial", "EA-full", "SA", "IC-L1", "IC-L2", "IC-L3", "IC-L4"]:
             transformations[t] = {"success": False, "reason": "no_context"}
 
     # TA: question-based transformation (applies to all context types)
@@ -214,7 +252,9 @@ def run_batch(dataset: List[Dict], start: int, end: int) -> Dict[str, Any]:
     total = len(problems)
     by_type = {}
     for t in TYPE_KEYS:
-        successes = sum(1 for p in problems if p["transformations"].get(t, {}).get("success"))
+        successes = sum(
+            1 for p in problems if p["transformations"].get(t, {}).get("success")
+        )
         failures = total - successes
         fail_reasons: Dict[str, int] = {}
         for p in problems:
@@ -229,7 +269,8 @@ def run_batch(dataset: List[Dict], start: int, end: int) -> Dict[str, Any]:
         }
 
     transformable = sum(
-        1 for p in problems
+        1
+        for p in problems
         if any(p["transformations"].get(t, {}).get("success") for t in TYPE_KEYS)
     )
 
@@ -286,7 +327,9 @@ def main():
     logger.info(f"변환 완료: {output_file}")
     logger.info(f"{'=' * 60}")
     cov = output["coverage_summary"]
-    logger.info(f"전체: {cov['total_problems']}문제, 변환가능: {cov['transformable']}문제")
+    logger.info(
+        f"전체: {cov['total_problems']}문제, 변환가능: {cov['transformable']}문제"
+    )
     for t in TYPE_KEYS:
         info = cov["by_type"][t]
         logger.info(f"  {t:12s}: {info['success']:3d} 성공 ({info['rate']}%)")

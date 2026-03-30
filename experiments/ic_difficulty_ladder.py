@@ -21,12 +21,20 @@ import re
 from copy import deepcopy
 from typing import Dict, List, Optional, Tuple
 
-from experiments.apply_transformations_full import (
-    _extract_numbers_from_text,
-    _is_descriptor_number,
-    detect_context_type,
-    normalize_context,
-)
+try:
+    from experiments.apply_transformations_full import (
+        _extract_numbers_from_text,
+        _is_descriptor_number,
+        detect_context_type,
+        normalize_context,
+    )
+except ModuleNotFoundError:
+    from apply_transformations_full import (
+        _extract_numbers_from_text,
+        _is_descriptor_number,
+        detect_context_type,
+        normalize_context,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +286,10 @@ def transform_ic_l3_text(
 
     Delegates to the proven transform_type5_text logic, re-labeled as L3.
     """
-    from experiments.apply_transformations_full import transform_type5_text
+    try:
+        from experiments.apply_transformations_full import transform_type5_text
+    except ModuleNotFoundError:
+        from apply_transformations_full import transform_type5_text
 
     result = transform_type5_text(context, question, python_solution)
     if result[0] is None:
@@ -294,7 +305,10 @@ def transform_ic_l3_json(
     context_dict: Dict, question: str
 ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """L3: Authority conflict for JSON context."""
-    from experiments.apply_transformations_full import transform_type5_json
+    try:
+        from experiments.apply_transformations_full import transform_type5_json
+    except ModuleNotFoundError:
+        from apply_transformations_full import transform_type5_json
 
     result = transform_type5_json(context_dict, question)
     if result[0] is None:
@@ -310,7 +324,10 @@ def transform_ic_l3_markdown(
     context: str, question: str, python_solution: str = ""
 ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """L3: Authority conflict for markdown context."""
-    from experiments.apply_transformations_full import transform_type5_markdown
+    try:
+        from experiments.apply_transformations_full import transform_type5_markdown
+    except ModuleNotFoundError:
+        from apply_transformations_full import transform_type5_markdown
 
     result = transform_type5_markdown(context, question, python_solution)
     if result[0] is None:

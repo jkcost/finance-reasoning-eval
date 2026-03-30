@@ -30,21 +30,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TYPE_KEYS = ["EA-partial", "EA-full", "SA", "IC", "TA"]
+TYPE_KEYS = [
+    "EA-partial",
+    "EA-full",
+    "SA",
+    "IC-L1",
+    "IC-L2",
+    "IC-L3",
+    "IC-L4",
+    "TA",
+]
 TYPE_DESCRIPTIONS = {
     "EA-partial": "명시적 부재 (부분) — N/A 마커로 특정 값 제거",
     "EA-full": "명시적 부재 (전체) — 키/컬럼 전체 삭제",
     "SA": "무표지 부재 — 마커 없이 조용히 삭제",
-    "IC": "정보 충돌 — 1.5x 모순값 삽입",
+    "IC-L1": "IC 타이포 — 10x 자릿수 오류 (가장 쉬움)",
+    "IC-L2": "IC 단위 불일치 — million/billion, %/bps 혼동",
+    "IC-L3": "IC 권위 충돌 — 1.5x 모순값 + 권위적 출처",
+    "IC-L4": "IC 기간 합산 — 분기합 ≠ 연간총계",
     "TA": "시간적 모호성 — 연도를 모호한 표현으로 대체",
 }
 TYPE_COLORS = {
     "EA-partial": "#3b82f6",
     "EA-full": "#8b5cf6",
     "SA": "#f59e0b",
-    "IC": "#ef4444",
+    "IC-L1": "#22c55e",
+    "IC-L2": "#3b82f6",
+    "IC-L3": "#ef4444",
+    "IC-L4": "#f59e0b",
     "TA": "#6b7280",
 }
+# Legacy IC key mapping for backward compatibility with old batch_transformations
+LEGACY_IC_TO_L3 = {"IC": "IC-L3"}
 
 
 def _esc(text: str) -> str:
