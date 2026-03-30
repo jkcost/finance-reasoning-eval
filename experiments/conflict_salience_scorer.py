@@ -16,11 +16,9 @@ No API calls needed — operates on existing experimental data.
 Reference: Design Doc (office-hours), CEO Plan 2026-03-30
 """
 
-import json
 import logging
 import re
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -75,8 +73,9 @@ class SalienceFeatures:
         if self.same_paragraph:
             score += 0.2
 
-        # Magnitude ratio: larger difference is more obvious
-        ratio_diff = abs(self.magnitude_ratio - 1.0)
+        # Magnitude ratio: larger difference is more obvious (symmetric)
+        safe_ratio = max(self.magnitude_ratio, 1e-9)
+        ratio_diff = max(safe_ratio, 1.0 / safe_ratio) - 1.0
         if ratio_diff >= 5.0:  # L1: 10x
             score += 0.3
         elif ratio_diff >= 0.3:  # L3: 1.5x
@@ -117,7 +116,7 @@ def extract_salience_features(
     if original is not None and conflicting is not None:
         features.original_value = original
         features.conflicting_value = conflicting
-        if original != 0:
+        if abs(original) > 1e-9:
             features.magnitude_ratio = conflicting / original
 
     # Token distance between the two values in context
@@ -132,10 +131,8 @@ def extract_salience_features(
             transformed_context, original, conflicting
         )
 
-    # Authority marker count near conflict area
-    features.authority_marker_count = _count_authority_markers(
-        transformed_context, transformation_description
-    )
+    # Authority marker count in context
+    features.authority_marker_count = _count_authority_markers(transformed_context)
 
     # Explicit discrepancy note
     discrepancy_patterns = [
@@ -180,9 +177,7 @@ def _parse_values_from_description(
     return None, None
 
 
-def _compute_token_distance(
-    context: str, val1: float, val2: float
-) -> int:
+def _compute_token_distance(context: str, val1: float, val2: float) -> int:
     """Compute approximate token distance between two values in context."""
     # Find positions of both values
     val1_strs = [str(val1), f"{val1:,.0f}", f"{val1:.2f}"]
@@ -223,8 +218,8 @@ def _in_same_paragraph(context: str, val1: float, val2: float) -> bool:
     return False
 
 
-def _count_authority_markers(context: str, description: str) -> int:
-    """Count authority keywords near the conflict area."""
+def _count_authority_markers(context: str) -> int:
+    """Count authority keywords in the context."""
     count = 0
     context_lower = context.lower()
     for keyword in AUTHORITY_KEYWORDS:
@@ -289,16 +284,18 @@ def compute_regression_data(
         response = response_map.get(sf.question_id, "confident")
         is_refusal = 1 if response in ("refused", "caveat") else 0
 
-        regression_data.append({
-            "question_id": sf.question_id,
-            "ic_level": sf.ic_level,
-            "token_distance": sf.token_distance,
-            "same_paragraph": int(sf.same_paragraph),
-            "authority_marker_count": sf.authority_marker_count,
-            "magnitude_ratio": sf.magnitude_ratio,
-            "has_discrepancy_note": int(sf.has_explicit_discrepancy_note),
-            "salience_score": sf.salience_score,
-            "refusal": is_refusal,
-        })
+        regression_data.append(
+            {
+                "question_id": sf.question_id,
+                "ic_level": sf.ic_level,
+                "token_distance": sf.token_distance,
+                "same_paragraph": int(sf.same_paragraph),
+                "authority_marker_count": sf.authority_marker_count,
+                "magnitude_ratio": sf.magnitude_ratio,
+                "has_discrepancy_note": int(sf.has_explicit_discrepancy_note),
+                "salience_score": sf.salience_score,
+                "refusal": is_refusal,
+            }
+        )
 
     return regression_data

@@ -19,13 +19,11 @@ import json
 import logging
 import re
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from experiments.apply_transformations_full import (
-    LABEL_IC,
     _extract_numbers_from_text,
     _is_descriptor_number,
-    _parse_markdown_table,
     detect_context_type,
     normalize_context,
 )
@@ -48,6 +46,7 @@ IC_LEVELS = [LABEL_IC_L1, LABEL_IC_L2, LABEL_IC_L3, LABEL_IC_L4, LABEL_IC_L5]
 # ============================================================================
 # L1: OBVIOUS TYPO (rule-based, 10x digit error)
 # ============================================================================
+
 
 def transform_ic_l1_text(
     context: str, question: str, python_solution: str = ""
@@ -112,8 +111,9 @@ def transform_ic_l1_text(
     if has_percent:
         typo_formatted = f"{typo_formatted}%"
 
-    # Replace the value in context (simulating a data entry typo)
-    new_context = context.replace(original_str, typo_formatted, 1)
+    # Replace at exact match position (not first occurrence in context)
+    start, end = best_match.start(), best_match.end()
+    new_context = context[:start] + typo_formatted + context[end:]
 
     return (
         new_context,
@@ -137,9 +137,7 @@ def transform_ic_l1_json(
                 target_year = years[-1]
                 original_val = context_dict[key][target_year]
                 try:
-                    num_val = float(
-                        str(original_val).replace(",", "").replace("%", "")
-                    )
+                    num_val = float(str(original_val).replace(",", "").replace("%", ""))
                     typo_val = num_val * 10
                     new_context[key][target_year] = typo_val
                     return (
@@ -199,7 +197,8 @@ def transform_ic_l2_text(
                 original_unit = m.group(2).lower()
                 for u1, u2, factor in _UNIT_PAIRS:
                     if original_unit == u1:
-                        mismatch_val = val / factor
+                        # Apply 1.5x error on top of unit conversion to create actual conflict
+                        mismatch_val = val / factor * 1.5
                         mismatch_sentence = (
                             f"According to a separate filing, this figure was "
                             f"reported as {mismatch_val:,.2f} {u2}."
@@ -221,7 +220,7 @@ def transform_ic_l2_text(
                                 )
                         break
                     elif original_unit == u2:
-                        mismatch_val = val * factor
+                        mismatch_val = val * factor * 1.5
                         mismatch_sentence = (
                             f"According to a separate filing, this figure was "
                             f"reported as {mismatch_val:,.0f} {u1}."
@@ -243,8 +242,8 @@ def transform_ic_l2_text(
                         break
 
             elif unit_type == "percentage":
-                # % vs basis points
-                bps_val = val * 100
+                # % vs basis points (with 1.5x error to create actual conflict)
+                bps_val = val * 100 * 1.5
                 mismatch_sentence = (
                     f"Note: An alternative source reports this rate as "
                     f"{bps_val:.0f} basis points."
@@ -270,6 +269,7 @@ def transform_ic_l2_text(
 # ============================================================================
 # L3: AUTHORITY CONFLICT (delegates to existing IC implementation)
 # ============================================================================
+
 
 def transform_ic_l3_text(
     context: str, question: str, python_solution: str = ""
@@ -325,6 +325,7 @@ def transform_ic_l3_markdown(
 # ============================================================================
 # L4: CROSS-PERIOD CONFLICT (summation inconsistency)
 # ============================================================================
+
 
 def transform_ic_l4_json(
     context_dict: Dict, question: str
@@ -410,8 +411,18 @@ def transform_ic_l4_text(
     if len(values) < 3:
         return None, None, None
 
-    # Take first 3-4 values and compute their sum
-    series = values[:4]
+    # Filter to values within same order of magnitude (likely from same series)
+    base_val = values[0][0]
+    series_candidates = [
+        (v, m)
+        for v, m in values
+        if 0.01 <= v / base_val <= 100  # within 2 orders of magnitude
+    ]
+    if len(series_candidates) < 3:
+        return None, None, None
+
+    # Take first 3-4 same-magnitude values
+    series = series_candidates[:4]
     series_sum = sum(v for v, _ in series)
     fake_total = series_sum * 0.85  # 15% off from actual sum
 
@@ -433,6 +444,7 @@ def transform_ic_l4_text(
 # L5: IMPLICIT RATIO INCONSISTENCY
 # ============================================================================
 
+
 def transform_ic_l5_text(
     context: str, question: str, python_solution: str = ""
 ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -448,7 +460,9 @@ def transform_ic_l5_text(
     # Pattern: find revenue and profit/margin mentions
     revenue_pattern = r"revenue[s]?\s+(?:of|was|is|were|:)?\s*\$?([\d,]+(?:\.\d+)?)\s*(million|billion|thousand)?"
     profit_pattern = r"(?:net\s+)?(?:income|profit|earnings)\s+(?:of|was|is|were|:)?\s*\$?([\d,]+(?:\.\d+)?)\s*(million|billion|thousand)?"
-    margin_pattern = r"(?:profit|net|operating)\s+margin\s+(?:of|was|is|were|:)?\s*([\d.]+)%"
+    margin_pattern = (
+        r"(?:profit|net|operating)\s+margin\s+(?:of|was|is|were|:)?\s*([\d.]+)%"
+    )
 
     revenue_match = re.search(revenue_pattern, context, re.IGNORECASE)
     profit_match = re.search(profit_pattern, context, re.IGNORECASE)
@@ -488,15 +502,13 @@ def transform_ic_l5_text(
             rev = float(revenue_match.group(1).replace(",", ""))
             margin = float(margin_match.group(1))
 
-            if rev <= 0:
+            if rev <= 0 or margin <= 0:
                 return None, None, None
 
             implied_profit = rev * margin / 100
             fake_profit = implied_profit * 1.8  # 80% off
 
-            profit_sentence = (
-                f"Net income for the period totaled ${fake_profit:,.2f}."
-            )
+            profit_sentence = f"Net income for the period totaled ${fake_profit:,.2f}."
             new_context = context + " " + profit_sentence
 
             return (
@@ -514,6 +526,7 @@ def transform_ic_l5_text(
 # ============================================================================
 # ORCHESTRATION: Apply all IC levels to a problem
 # ============================================================================
+
 
 def apply_ic_ladder(
     example: Dict,
@@ -565,39 +578,54 @@ def apply_ic_ladder(
 
 
 def _apply_l1(
-    context: str, context_type: str, question: str,
-    python_solution: str, example: Dict,
+    context: str,
+    context_type: str,
+    question: str,
+    python_solution: str,
+    example: Dict,
 ) -> Optional[Dict]:
     if context_type == "json":
         try:
             ctx_dict = json.loads(context) if isinstance(context, str) else context
             new_ctx, desc, expected = transform_ic_l1_json(ctx_dict, question)
             if new_ctx is not None:
-                return _build_result(example, json.dumps(new_ctx), desc, expected, LABEL_IC_L1)
+                return _build_result(
+                    example, json.dumps(new_ctx), desc, expected, LABEL_IC_L1
+                )
         except (json.JSONDecodeError, TypeError):
             pass
     else:
-        new_ctx, desc, expected = transform_ic_l1_text(context, question, python_solution)
+        new_ctx, desc, expected = transform_ic_l1_text(
+            context, question, python_solution
+        )
         if new_ctx is not None:
             return _build_result(example, new_ctx, desc, expected, LABEL_IC_L1)
     return None
 
 
 def _apply_l2(
-    context: str, context_type: str, question: str,
-    python_solution: str, example: Dict,
+    context: str,
+    context_type: str,
+    question: str,
+    python_solution: str,
+    example: Dict,
 ) -> Optional[Dict]:
     # L2 only works on text/markdown (needs unit keywords)
     if context_type in ("text", "markdown"):
-        new_ctx, desc, expected = transform_ic_l2_text(context, question, python_solution)
+        new_ctx, desc, expected = transform_ic_l2_text(
+            context, question, python_solution
+        )
         if new_ctx is not None:
             return _build_result(example, new_ctx, desc, expected, LABEL_IC_L2)
     return None
 
 
 def _apply_l3(
-    context: str, context_type: str, question: str,
-    python_solution: str, example: Dict,
+    context: str,
+    context_type: str,
+    question: str,
+    python_solution: str,
+    example: Dict,
 ) -> Optional[Dict]:
     if context_type == "json":
         try:
@@ -609,53 +637,72 @@ def _apply_l3(
         except (json.JSONDecodeError, TypeError):
             pass
     elif context_type == "markdown":
-        new_ctx, desc, expected = transform_ic_l3_markdown(context, question, python_solution)
+        new_ctx, desc, expected = transform_ic_l3_markdown(
+            context, question, python_solution
+        )
         if new_ctx is not None:
             return _build_result(example, new_ctx, desc, expected, LABEL_IC_L3)
     else:
-        new_ctx, desc, expected = transform_ic_l3_text(context, question, python_solution)
+        new_ctx, desc, expected = transform_ic_l3_text(
+            context, question, python_solution
+        )
         if new_ctx is not None:
             return _build_result(example, new_ctx, desc, expected, LABEL_IC_L3)
     return None
 
 
 def _apply_l4(
-    context: str, context_type: str, question: str,
-    python_solution: str, example: Dict,
+    context: str,
+    context_type: str,
+    question: str,
+    python_solution: str,
+    example: Dict,
 ) -> Optional[Dict]:
     if context_type == "json":
         try:
             ctx_dict = json.loads(context) if isinstance(context, str) else context
             new_ctx, desc, expected = transform_ic_l4_json(ctx_dict, question)
             if new_ctx is not None:
-                return _build_result(example, json.dumps(new_ctx), desc, expected, LABEL_IC_L4)
+                return _build_result(
+                    example, json.dumps(new_ctx), desc, expected, LABEL_IC_L4
+                )
         except (json.JSONDecodeError, TypeError):
             pass
     else:
-        new_ctx, desc, expected = transform_ic_l4_text(context, question, python_solution)
+        new_ctx, desc, expected = transform_ic_l4_text(
+            context, question, python_solution
+        )
         if new_ctx is not None:
             return _build_result(example, new_ctx, desc, expected, LABEL_IC_L4)
     return None
 
 
 def _apply_l5(
-    context: str, context_type: str, question: str,
-    python_solution: str, example: Dict,
+    context: str,
+    context_type: str,
+    question: str,
+    python_solution: str,
+    example: Dict,
 ) -> Optional[Dict]:
     # L5 requires extractable financial relationships — text/markdown only
     if context_type in ("text", "markdown"):
-        new_ctx, desc, expected = transform_ic_l5_text(context, question, python_solution)
+        new_ctx, desc, expected = transform_ic_l5_text(
+            context, question, python_solution
+        )
         if new_ctx is not None:
             return _build_result(example, new_ctx, desc, expected, LABEL_IC_L5)
     return None
 
 
 def _build_result(
-    example: Dict, new_context: str, description: str,
-    expected_behavior: str, label: str,
+    example: Dict,
+    new_context: str,
+    description: str,
+    expected_behavior: str,
+    label: str,
 ) -> Dict:
     """Build a transformation result dict in standard format."""
-    result = {**example}
+    result = deepcopy(example)
     result["context"] = new_context
     result["transformation_type"] = label
     result["transformation_description"] = description

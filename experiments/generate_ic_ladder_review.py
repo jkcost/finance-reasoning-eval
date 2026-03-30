@@ -63,6 +63,24 @@ def _esc(text: str) -> str:
     return html.escape(str(text)) if text else ""
 
 
+def _esc_js(s: str) -> str:
+    """JavaScript 문자열 리터럴에 안전한 이스케이프."""
+    return (
+        s.replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+    )
+
+
+def _safe_json_for_html(data: Any) -> str:
+    """JSON을 <script> 블록 안에 안전하게 삽입."""
+    s = json.dumps(data, ensure_ascii=False)
+    s = s.replace("</", "<\\/")
+    s = s.replace("<!--", "<\\!--")
+    return s
+
+
 def _restructure_transformations(
     raw_transformations: List[Dict],
 ) -> Dict[str, Dict[str, Any]]:
@@ -133,9 +151,11 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
         desc = IC_TYPE_DESCRIPTIONS.get(ttype, "")
         difficulty = IC_DIFFICULTY_LABELS.get(ttype, "")
 
+        qid_js = _esc_js(qid)
+        ttype_js = _esc_js(ttype)
         tabs_html += (
             f'<button class="tab-btn {tab_class}" '
-            f"onclick=\"showTab('{qid}', '{ttype}')\" "
+            f"onclick=\"showTab('{qid_js}', '{ttype_js}')\" "
             f'id="tab-{qid}-{ttype}" '
             f'title="{_esc(desc)}" '
             f'style="--type-color:{color}">'
@@ -170,7 +190,7 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                 f'<div class="review-controls">'
                 f'<div class="review-row">'
                 f"<label>변환 품질:</label>"
-                f"<select id=\"judgment-{qid}-{ttype}\" onchange=\"saveAnnotation('{qid}','{ttype}')\">"
+                f"<select id=\"judgment-{qid}-{ttype}\" onchange=\"saveAnnotation('{qid_js}','{ttype_js}')\">"
                 f'<option value="">미평가</option>'
                 f'<option value="approved">✓ 승인 (자연스러운 변환)</option>'
                 f'<option value="needs_modification">△ 수정 필요</option>'
@@ -178,7 +198,7 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                 f"</select></div>"
                 f'<div class="review-row">'
                 f"<label>모델이 탐지할 수 있을까?</label>"
-                f"<select id=\"detectable-{qid}-{ttype}\" onchange=\"saveAnnotation('{qid}','{ttype}')\">"
+                f"<select id=\"detectable-{qid}-{ttype}\" onchange=\"saveAnnotation('{qid_js}','{ttype_js}')\">"
                 f'<option value="">미평가</option>'
                 f'<option value="easy">쉬움 (대부분 탐지)</option>'
                 f'<option value="medium">보통 (일부 탐지)</option>'
@@ -188,7 +208,7 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                 f'<div class="review-row">'
                 f"<label>메모:</label>"
                 f'<input type="text" id="note-{qid}-{ttype}" placeholder="리뷰 메모..." '
-                f"onchange=\"saveAnnotation('{qid}','{ttype}')\" style=\"flex:1\">"
+                f"onchange=\"saveAnnotation('{qid_js}','{ttype_js}')\" style=\"flex:1\">"
                 f"</div></div>"
             )
         else:
@@ -289,7 +309,7 @@ def generate_html(
                 "success_types": [k for k in IC_TYPE_KEYS if k in p["transformations"]],
             }
         )
-    problems_meta_json = json.dumps(problems_meta)
+    problems_meta_json = _safe_json_for_html(problems_meta)
 
     range_start = metadata.get("range", [0, 120])[0]
     range_end = metadata.get("range", [0, 120])[1]
@@ -426,12 +446,16 @@ const RANGE_START = {range_start};
 const RANGE_END = {range_end};
 let annotations = {{}};
 let assignee = '';
+let visibleStart = RANGE_START;
+let visibleEnd = RANGE_END;
 
 function init() {{
   const params = new URLSearchParams(window.location.search);
   assignee = params.get('assignee') || '';
-  const start = parseInt(params.get('start') || RANGE_START);
-  const end = parseInt(params.get('end') || RANGE_END);
+  visibleStart = parseInt(params.get('start') || RANGE_START);
+  visibleEnd = parseInt(params.get('end') || RANGE_END);
+  const start = visibleStart;
+  const end = visibleEnd;
 
   document.getElementById('assigneeInput').value = assignee;
   document.getElementById('rangeInfo').textContent =
@@ -443,8 +467,8 @@ function init() {{
     card.style.display = (idx >= start && idx < end) ? '' : 'none';
   }});
 
-  // Load saved annotations from localStorage
-  const storageKey = `icl_${{RANGE_START}}_${{RANGE_END}}_${{assignee || 'default'}}`;
+  // Load saved annotations from localStorage (keyed by actual visible range)
+  const storageKey = `icl_${{start}}_${{end}}_${{assignee || 'default'}}`;
   const saved = localStorage.getItem(storageKey);
   if (saved) {{
     annotations = JSON.parse(saved);
@@ -477,8 +501,8 @@ function saveAnnotation(qid, ttype) {{
     assignee: assignee,
   }};
 
-  // Save to localStorage
-  const storageKey = `icl_${{RANGE_START}}_${{RANGE_END}}_${{assignee || 'default'}}`;
+  // Save to localStorage (keyed by visible range)
+  const storageKey = `icl_${{visibleStart}}_${{visibleEnd}}_${{assignee || 'default'}}`;
   localStorage.setItem(storageKey, JSON.stringify(annotations));
   updateStats();
 }}
@@ -546,7 +570,13 @@ function handleImport(event) {{
   if (!file) return;
   const reader = new FileReader();
   reader.onload = function(e) {{
-    const data = JSON.parse(e.target.result);
+    let data;
+    try {{
+      data = JSON.parse(e.target.result);
+    }} catch(err) {{
+      alert('JSON 파싱 실패: ' + err.message);
+      return;
+    }}
     const imported = data.annotations || data;
     // Merge
     for (const [qid, types] of Object.entries(imported)) {{
@@ -556,12 +586,19 @@ function handleImport(event) {{
     restoreAnnotations();
     updateStats();
     alert(`${{Object.keys(imported).length}}개 문제의 annotation을 가져왔습니다.`);
+    event.target.value = '';
   }};
   reader.readAsText(file);
 }}
 
 function filterCards(mode) {{
   document.querySelectorAll('.problem-card').forEach(card => {{
+    const idx = parseInt(card.dataset.index);
+    // Always respect range filter
+    if (idx < visibleStart || idx >= visibleEnd) {{
+      card.style.display = 'none';
+      return;
+    }}
     const qid = card.id.replace('card-', '');
     const ann = annotations[qid] || {{}};
     const hasAny = Object.values(ann).some(a => a.judgment);
