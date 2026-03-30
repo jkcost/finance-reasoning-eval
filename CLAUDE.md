@@ -4,6 +4,13 @@
 FinanceReasoning 데이터셋을 활용한 LLM 금융 추론 능력 평가 프레임워크.
 논문 기반의 오류 분류 체계와 LLM 기반 오답 분석 기능을 포함.
 
+## 코드 관리 원칙 (CRITICAL)
+- **코드 수정/실행 후 불필요한 파일 정리**: 로직이 바뀌어 더 이상 사용하지 않는 코드, 이전 실험 결과 파일은 즉시 삭제하거나 `_archive/`로 이동
+- **폴더를 항상 깨끗하게 유지**: 팀원이 clone했을 때 현재 활성 파일만 보여야 함
+- **작업 이력은 MEMORY에 기록**: 삭제/변경된 파일의 목적과 변경 이유를 memory에 저장하여 에이전트가 맥락을 유지
+- **`_archive/`는 .gitignore**: 로컬에만 보관, Git에는 올리지 않음
+- **`experiments/results/`는 .gitignore**: 실험 결과는 Git에 올리지 않음 (annotations/ 제외)
+
 ## 핵심 디렉토리 구조
 ```
 finance_LLM/
@@ -255,14 +262,33 @@ python experiments/generate_batch_report.py
 - **IC (정보 충돌)**: **전 모델 실패** — "audited report" 같은 권위 표현 시 무조건 새 값 채택, 모순 자체를 인식 못함
 - 충돌 탐지가 부재 탐지보다 훨씬 어려운 메타인지 과제
 
+## 변환 구현 원칙 (CRITICAL)
+
+**변환은 반드시 LLM 기반으로 수행한다.**
+- 규칙 기반(regex, 키워드 매칭)은 금융 맥락을 이해하지 못해 부적절한 변환을 생성함
+- LLM이 문제를 분석하고, 풀이에 필수적인 데이터를 식별한 뒤, 변환 기준에 따라 변환을 생성해야 함
+- `apply_transformations_full.py`의 기존 규칙 기반 함수는 v1 레거시이며, LLM 기반 파이프라인으로 교체 예정
+- 변환 생성 시 LLM이 판단해야 할 것:
+  1. "이 문제를 풀려면 어떤 데이터가 필수적인가?"
+  2. "이 데이터를 제거하면 다른 방법으로 도출 가능한가?" (역산 가능성 체크)
+  3. "자연스럽게 제거/변형하려면 어떻게 바꿔야 하는가?"
+
+## Human Review 협업 도구
+
+- `experiments/generate_human_review.py`: 변환 결과 리뷰 HTML 생성 (v2)
+- `experiments/merge_annotations.py`: 작업자별 annotation 머지 + 불일치 감지
+- `docs/REVIEW_GUIDE.md`: 협업 가이드
+- 작업자 분배: URL 파라미터 `?assignee=이름&start=N&end=M`
+- annotation 저장: `experiments/results/metacognitive/annotations/`
+
 ## 다음 단계 (TODO)
 
-1. **balanced 모델셋 실행** — 더 큰 모델(gpt-4o, claude-sonnet-4, gemini-2.5-pro)에서 IC 결과 확인
-2. **프롬프트 전략 비교** — standard vs metacognitive vs self_verification vs contradiction_aware 4가지 비교
-3. **Phase C: RAG 영향** — 금융 함수의 파라미터 정의가 누락 데이터 인식에 도움 되는지
-4. **n 확대** — n=10~20으로 늘려 통계적 신뢰도 확보
-5. **IC 개선 실험** — 모순 탐지를 위한 별도 프롬프트 전략 설계 고려
-6. ~~**validate_transformation() 개선**~~ → `run_validation_pipeline.py`로 대체 완료 (추론 추적 기반)
+1. **[진행중] LLM 기반 변환 파이프라인** — 규칙 기반을 LLM 기반으로 교체
+2. **Human Review** — 120문제 변환 품질 검증 (4명 분배)
+3. **balanced 모델셋 실행** — 더 큰 모델에서 IC 결과 확인
+4. **프롬프트 전략 비교** — 4가지 전략 비교
+5. **Phase C: RAG 영향**
+6. **n 확대** — 통계적 신뢰도 확보
 
 ## 관련 논문 리뷰
 
