@@ -43,6 +43,8 @@ env/
 # Project specific
 nul
 experiments/results/
+!experiments/results/metacognitive/annotations/
+!experiments/results/metacognitive/annotations/*.json
 
 # Legacy archive (로컬 보관용, Git 공유 제외)
 _archive/
