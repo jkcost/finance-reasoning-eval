@@ -41,13 +41,13 @@ pip install -r evaluation/requirements.txt
 
 ```bash
 # 변환 생성 (API 호출 없음, 즉시 완료)
-python experiments/run_batch_transformation.py --start 0 --end 30
+python experiments/run_batch_transformation.py --start 0 --end 120
 
 # 리뷰 HTML 생성
-python experiments/generate_human_review.py
+python experiments/generate_human_review.py --input batch_transformations_0_120.json
 
 # 결과 파일 확인
-ls experiments/results/metacognitive/human_review_0_30.html
+ls experiments/results/metacognitive/human_review_0_120.html
 ```
 
 ---
@@ -56,11 +56,17 @@ ls experiments/results/metacognitive/human_review_0_30.html
 
 ### 담당 범위
 
-| 작업자 | 범위 | 브라우저 URL |
-|--------|------|-------------|
-| 작업자 A | #0 ~ #9 | `human_review_0_30.html?assignee=작업자A&start=0&end=10` |
-| 작업자 B | #10 ~ #19 | `human_review_0_30.html?assignee=작업자B&start=10&end=20` |
-| 작업자 C | #20 ~ #29 | `human_review_0_30.html?assignee=작업자C&start=20&end=30` |
+120문제 중 101문제가 변환 가능 (19문제는 context 없어 자동 건너뜀).
+4명이 각 약 25문제씩 담당합니다.
+
+| 작업자 | 범위 | 리뷰 문제 수 | 브라우저 URL |
+|--------|------|-------------|-------------|
+| 작업자 1 | #0 ~ #27 | 26문제 | `human_review_0_120.html?assignee=작업자1&start=0&end=28` |
+| 작업자 2 | #28 ~ #58 | 25문제 | `human_review_0_120.html?assignee=작업자2&start=28&end=59` |
+| 작업자 3 | #59 ~ #91 | 25문제 | `human_review_0_120.html?assignee=작업자3&start=59&end=92` |
+| 작업자 4 | #92 ~ #119 | 25문제 | `human_review_0_120.html?assignee=작업자4&start=92&end=120` |
+
+> 범위 내 context가 없는 문제(회색 카드)는 변환 탭이 없으므로 건너뛰면 됩니다.
 
 > `assignee`에 본인 이름을 입력하세요. 이름별로 작업 내용이 별도 저장됩니다.
 

@@ -55,14 +55,23 @@ cp .env.example .env  # 키 입력
 
 ```bash
 # 1. 변환 생성 (API 호출 없음, 즉시 완료)
-python experiments/run_batch_transformation.py --start 0 --end 30
+python experiments/run_batch_transformation.py --start 0 --end 120
 
 # 2. 리뷰 HTML 생성
-python experiments/generate_human_review.py
+python experiments/generate_human_review.py --input batch_transformations_0_120.json
 
 # 3. 브라우저에서 열기 (본인 이름과 담당 범위 지정)
-# experiments/results/metacognitive/human_review_0_30.html?assignee=이름&start=0&end=10
+# experiments/results/metacognitive/human_review_0_120.html?assignee=이름&start=0&end=28
 ```
+
+### 작업 분배 (4명)
+
+| 작업자 | 범위 | 문제 수 |
+|--------|------|---------|
+| 작업자 1 | #0 ~ #27 | 26문제 |
+| 작업자 2 | #28 ~ #58 | 25문제 |
+| 작업자 3 | #59 ~ #91 | 25문제 |
+| 작업자 4 | #92 ~ #119 | 25문제 |
 
 ## 연구 개요
 
