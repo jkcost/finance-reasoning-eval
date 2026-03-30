@@ -303,20 +303,38 @@ python experiments/generate_batch_report.py
 | PRIME (KDD'26) | 중간 | 해석 가능성 평가 방법론 |
 | RiskBound (KDD'26) | 중간 | 리스크 제어 접근법, 도메인 배경지식 |
 
-## Skill routing
+## gstack + Superpowers 병용 가이드
+
+### 역할 분담
+- **Superpowers**: 프로세스/방법론 (설계, 계획, TDD, 서브에이전트, Git worktree)
+- **gstack**: 도구/실행 (코드 리뷰, 보안 감사, 배포, 안전 가드레일, 회고)
+
+### 본 프로젝트 핵심 스킬
+| 작업 | 사용할 스킬 | 이유 |
+|------|------------|------|
+| 실험 설계 | Superpowers `brainstorming` | 소크라틱 대화로 연구 방향 정제 |
+| 구현 계획 | Superpowers `writing-plans` | 2~5분 단위 태스크 분해 |
+| 구현 | Superpowers `subagent-driven-development` | 서브에이전트 + 2단계 리뷰 |
+| TDD | Superpowers `test-driven-development` | RED-GREEN-REFACTOR |
+| 코드 리뷰 | gstack `/review` + `/cso` | 보안 감사 포함 |
+| 디버깅 | Superpowers `systematic-debugging` | 4단계 근본 원인 분석 |
+| 배포 | gstack `/ship` | main 동기화 → 테스트 → PR |
+| 안전 | gstack `/careful`, `/freeze` | 실험 데이터 보호 |
+| 회고 | gstack `/retro` | 주간 작업 분석 |
+| Git 관리 | Superpowers `using-git-worktrees` | 격리 개발 |
+
+### Skill routing
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
 tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
-The skill has specialized workflows that produce better results than ad-hoc answers.
 
 Key routing rules:
-- Product ideas, "is this worth building", brainstorming → invoke office-hours
-- Bugs, errors, "why is this broken", 500 errors → invoke investigate
-- Ship, deploy, push, create PR → invoke ship
-- QA, test the site, find bugs → invoke qa
-- Code review, check my diff → invoke review
-- Update docs after shipping → invoke document-release
-- Weekly retro → invoke retro
-- Design system, brand → invoke design-consultation
-- Visual audit, design polish → invoke design-review
-- Architecture review → invoke plan-eng-review
+- 연구 방향, 아이디어, brainstorming → Superpowers `brainstorming`
+- 구현 계획 수립 → Superpowers `writing-plans`
+- 테스트 작성 → Superpowers `test-driven-development`
+- Bugs, errors, "why is this broken" → Superpowers `systematic-debugging`
+- 코드 리뷰, check my diff → gstack `/review`
+- 보안 감사 → gstack `/cso`
+- Ship, deploy, push, create PR → gstack `/ship`
+- Weekly retro → gstack `/retro`
+- Architecture review → gstack `/plan-eng-review`

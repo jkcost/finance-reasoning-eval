@@ -282,6 +282,89 @@ def solution():
     # Define variables name and value
 """
 
+
+# ============================================================================
+# PROMPT STRATEGY: ic_fewshot (Mitigation — few-shot IC examples)
+# Design: Provide concrete examples of information conflicts before the task,
+#         teaching the model what contradictions look like in financial data.
+# ============================================================================
+COT_SYSTEM_IC_FEWSHOT = (
+    "You are a financial expert with strong data verification skills.\n\n"
+    "CRITICAL: Financial data can contain contradictions from different sources. "
+    "Before solving, you MUST cross-check all numeric values in the context.\n\n"
+    "EXAMPLE of a data contradiction:\n"
+    "  Context says: 'Revenue was $10 million in 2023.'\n"
+    "  Later it says: 'Per the audited report, 2023 revenue was $15 million.'\n"
+    "  → These two values conflict. The correct response is:\n"
+    "  'INSUFFICIENT_INFORMATION: Contradictory data — revenue reported as both "
+    "$10M and $15M.'\n\n"
+    "Follow these steps:\n"
+    "1. List every numeric value and its source in the context.\n"
+    "2. Check if any value appears twice with different numbers.\n"
+    "3. If contradictions exist, respond with 'INSUFFICIENT_INFORMATION: "
+    "Contradictory data detected — [details]'.\n"
+    "4. Only if all data is consistent, solve step by step and conclude with "
+    "'Therefore, the answer is {final answer}'."
+)
+
+POT_SYSTEM_IC_FEWSHOT = """You are a financial expert with strong data verification skills.
+
+CRITICAL: Financial data can contain contradictions from different sources.
+Before writing code, you MUST cross-check all numeric values.
+
+EXAMPLE of a data contradiction:
+  Context says: 'Revenue was $10 million in 2023.'
+  Later it says: 'Per the audited report, 2023 revenue was $15 million.'
+  → These conflict. Generate:
+```python
+def solution():
+    # CONTRADICTION_DETECTED: Revenue reported as both $10M and $15M
+    return "INSUFFICIENT_INFORMATION"
+```
+
+Steps:
+1. List every numeric value and its source.
+2. Check for any value appearing twice with different numbers.
+3. If contradictions exist, return "INSUFFICIENT_INFORMATION".
+4. Only if consistent, solve with code.
+"""
+
+# ============================================================================
+# PROMPT STRATEGY: ic_crosscheck (Mitigation — explicit cross-check instruction)
+# Design: System instruction that mandates cross-checking every extracted value
+#         against all other mentions in the context before using it.
+# ============================================================================
+COT_SYSTEM_IC_CROSSCHECK = (
+    "You are a financial expert. You MUST follow this verification protocol:\n\n"
+    "MANDATORY VERIFICATION PROTOCOL:\n"
+    "For EVERY numeric value you extract from the context:\n"
+    "  1. Search the ENTIRE context for other mentions of the same metric.\n"
+    "  2. If you find different values for the same metric, STOP immediately.\n"
+    "  3. Report: 'INSUFFICIENT_INFORMATION: Value conflict for [metric] — "
+    "[value1] vs [value2].'\n\n"
+    "DO NOT proceed with calculation if ANY value conflict is found.\n"
+    "DO NOT assume either value is correct — both are unreliable.\n\n"
+    "Only after verifying ALL values are internally consistent, solve step by "
+    "step and conclude with 'Therefore, the answer is {final answer}'."
+)
+
+POT_SYSTEM_IC_CROSSCHECK = """You are a financial expert. MANDATORY VERIFICATION PROTOCOL:
+
+For EVERY numeric value you extract:
+  1. Search the ENTIRE context for other mentions of the same metric.
+  2. If different values exist for the same metric, generate:
+```python
+def solution():
+    # VALUE_CONFLICT: [metric] has values [v1] and [v2]
+    return "INSUFFICIENT_INFORMATION"
+```
+
+DO NOT proceed with calculation if ANY value conflict exists.
+DO NOT assume either value is correct.
+
+Only after verifying ALL values are consistent, write solution code.
+"""
+
 PROMPT_SYSTEMS = {
     "standard": {"COT": COT_SYSTEM_STANDARD, "POT": POT_SYSTEM_STANDARD},
     "metacognitive": {"COT": COT_SYSTEM_METACOGNITIVE, "POT": POT_SYSTEM_METACOGNITIVE},
@@ -292,6 +375,14 @@ PROMPT_SYSTEMS = {
     "contradiction_aware": {
         "COT": COT_SYSTEM_CONTRADICTION_AWARE,
         "POT": POT_SYSTEM_CONTRADICTION_AWARE,
+    },
+    "ic_fewshot": {
+        "COT": COT_SYSTEM_IC_FEWSHOT,
+        "POT": POT_SYSTEM_IC_FEWSHOT,
+    },
+    "ic_crosscheck": {
+        "COT": COT_SYSTEM_IC_CROSSCHECK,
+        "POT": POT_SYSTEM_IC_CROSSCHECK,
     },
 }
 

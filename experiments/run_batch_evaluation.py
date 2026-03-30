@@ -298,10 +298,30 @@ async def run_evaluation(
     providers: Dict[str, Any],
     prompt_strategy: str,
     concurrency: int = 5,
+    checkpoint_path: Optional[Path] = None,
 ) -> List[Dict]:
-    """Run all evaluations with concurrency control."""
+    """Run all evaluations with concurrency control and checkpoint/resume.
+
+    Args:
+        checkpoint_path: If provided, saves progress after each batch of 10
+            evaluations. On restart, skips already-completed (qid, model, type) combos.
+    """
     refusal_detector = RefusalDetector()
     semaphore = asyncio.Semaphore(concurrency)
+
+    # Load checkpoint if exists
+    completed_keys: set = set()
+    checkpoint_results: List[Dict] = []
+    if checkpoint_path and checkpoint_path.exists():
+        with open(checkpoint_path, "r", encoding="utf-8") as f:
+            checkpoint_data = json.load(f)
+            checkpoint_results = checkpoint_data.get("results", [])
+            for r in checkpoint_results:
+                key = (r["question_id"], r["model"], r["transformation_type"])
+                completed_keys.add(key)
+        logger.info(
+            f"Checkpoint loaded: {len(completed_keys)} evaluations already done"
+        )
 
     # Build task list from successful transformations
     tasks = []
@@ -324,9 +344,16 @@ async def run_evaluation(
                 q = question
 
             for model_name, provider in providers.items():
+                # Skip already-completed evaluations
+                if (qid, model_name, t_type) in completed_keys:
+                    continue
                 tasks.append((provider, model_name, q, ctx, ground_truth, qid, t_type))
 
-    logger.info(f"총 평가 작업: {len(tasks)}개 ({len(providers)}모델 × 변환)")
+    skipped = len(completed_keys)
+    logger.info(
+        f"총 평가 작업: {len(tasks)}개 신규 "
+        f"({skipped}개 checkpoint에서 복원, {len(providers)}모델 × 변환)"
+    )
 
     async def bounded_eval(task_args):
         async with semaphore:
@@ -336,16 +363,35 @@ async def run_evaluation(
                 refusal_detector=refusal_detector,
             )
 
-    # Run with progress logging
-    results = []
+    # Run with progress logging + periodic checkpoint saves
+    results = list(checkpoint_results)
     coros = [bounded_eval(t) for t in tasks]
     for i, coro in enumerate(asyncio.as_completed(coros)):
         result = await coro
         results.append(result)
         if (i + 1) % 10 == 0 or (i + 1) == len(coros):
-            logger.info(f"  진행: {i + 1}/{len(coros)}")
+            logger.info(f"  진행: {i + 1}/{len(coros)} (총 {len(results)}건)")
+            # Save checkpoint every 10 evaluations
+            if checkpoint_path and (i + 1) % 10 == 0:
+                _save_checkpoint(checkpoint_path, results)
+
+    # Final checkpoint save
+    if checkpoint_path:
+        _save_checkpoint(checkpoint_path, results)
 
     return results
+
+
+def _save_checkpoint(checkpoint_path: Path, results: List[Dict]) -> None:
+    """Save evaluation progress to checkpoint file."""
+    checkpoint_data = {
+        "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
+        "total": len(results),
+        "results": results,
+    }
+    with open(checkpoint_path, "w", encoding="utf-8") as f:
+        json.dump(checkpoint_data, f, ensure_ascii=False, indent=2)
+    logger.info(f"  Checkpoint saved: {len(results)} results")
 
 
 def build_summary(results: List[Dict]) -> Dict[str, Any]:
@@ -457,14 +503,27 @@ def main():
         logger.error("사용 가능한 모델이 없습니다.")
         sys.exit(1)
 
-    # Run evaluation
+    # Checkpoint path for resume support
+    output_dir = Path(args.output_dir) if args.output_dir else input_path.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    meta_range = input_data["metadata"]["range"]
+    checkpoint_path = (
+        output_dir / f"batch_eval_checkpoint_{meta_range[0]}_{meta_range[1]}.json"
+    )
+
+    # Run evaluation with checkpoint/resume
     results = asyncio.run(
-        run_evaluation(input_data, providers, args.prompt_strategy, args.concurrency)
+        run_evaluation(
+            input_data,
+            providers,
+            args.prompt_strategy,
+            args.concurrency,
+            checkpoint_path=checkpoint_path,
+        )
     )
 
     # Build output
     summary = build_summary(results)
-    meta_range = input_data["metadata"]["range"]
 
     # Store prompts used for reproducibility
     system_prompt = PROMPT_SYSTEMS[args.prompt_strategy][METHOD]
@@ -488,8 +547,6 @@ def main():
     }
 
     # Save
-    output_dir = Path(args.output_dir) if args.output_dir else input_path.parent
-    output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / f"batch_evaluation_{meta_range[0]}_{meta_range[1]}.json"
 
     with open(output_file, "w", encoding="utf-8") as f:
