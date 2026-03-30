@@ -302,3 +302,21 @@ python experiments/generate_batch_report.py
 | Mosaic (KDD'26) | 높음 | 에이전트 의견 충돌 해결 → IC 탐지 연구 연결 |
 | PRIME (KDD'26) | 중간 | 해석 가능성 평가 방법론 |
 | RiskBound (KDD'26) | 중간 | 리스크 제어 접근법, 도메인 배경지식 |
+
+## Skill routing
+
+When the user's request matches an available skill, ALWAYS invoke it using the Skill
+tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
+The skill has specialized workflows that produce better results than ad-hoc answers.
+
+Key routing rules:
+- Product ideas, "is this worth building", brainstorming → invoke office-hours
+- Bugs, errors, "why is this broken", 500 errors → invoke investigate
+- Ship, deploy, push, create PR → invoke ship
+- QA, test the site, find bugs → invoke qa
+- Code review, check my diff → invoke review
+- Update docs after shipping → invoke document-release
+- Weekly retro → invoke retro
+- Design system, brand → invoke design-consultation
+- Visual audit, design polish → invoke design-review
+- Architecture review → invoke plan-eng-review
