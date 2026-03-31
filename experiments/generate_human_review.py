@@ -628,7 +628,8 @@ h1 {{ font-size: 22px; font-weight: 600; }}
           <p><strong>탐지 난이도:</strong> <span class="guide-tag" style="background:#422006;color:#f59e0b;">MODERATE</span> 마커는 없지만 구조 변화</p>
           <div class="example">원본: | Issued | In Treasury | Outstanding |
 변환: | Issued | In Treasury |  (컬럼 삭제)</div>
-          <p style="margin-top:6px;"><strong>리뷰 체크:</strong> 삭제된 컬럼의 값이 다른 컬럼으로부터 역산 가능한지 확인! (예: Outstanding = Issued + Treasury이면 삭제해도 풀 수 있음 = 부적절)</p>
+          <p style="margin-top:6px;"><strong>리뷰 체크:</strong> 아래 Python Solution의 <span style="color:#22c55e;">● 초록색</span> 변수에 해당하는 칼럼이 <strong>context에서 정말 삭제됐는지</strong> 확인하세요. 초록 변수와 일치하는 칼럼이 아직 남아있다면 모델이 값을 읽을 수 있으므로 변환이 불충분합니다.</p>
+          <p style="font-size:11px;color:var(--text2);margin-top:4px;">&#9888; 역산 가능 경고가 표시된 경우: 삭제된 칼럼 값이 남은 칼럼들로 계산될 수 있다는 자동 탐지 결과입니다. 경고가 있으면 더 신중히 확인해주세요.</p>
         </div>
 
         <div class="guide-card" style="border-color:#f59e0b;">
