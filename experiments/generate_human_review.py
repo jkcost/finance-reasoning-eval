@@ -240,6 +240,9 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                 )
 
             if has_ctx:
+                # Ensure transformed_ctx is a string
+                if not isinstance(transformed_ctx, str):
+                    transformed_ctx = str(transformed_ctx)
                 # Escaped versions for display
                 orig_esc = _esc(context)
                 trans_esc = _esc(transformed_ctx)
