@@ -2,43 +2,48 @@
 
 > Metacognitive Evaluation via Controlled Information Manipulation
 
-LLM이 금융 문제에서 **정보 부족(Absence)**과 **정보 충돌(Conflict)**을 인식하는 능력을 평가하는 연구 프레임워크입니다.
+LLM이 금융 문제에서 정보 부족(Absence)과 정보 충돌(Conflict)을 인식하는 능력을 평가하는 연구 프레임워크입니다.
 
 ## 핵심 발견
 
-LLM의 메타인지 능력에는 **비대칭**이 존재합니다:
+LLM의 메타인지 능력에는 비대칭이 존재합니다:
 
-- **정보 부재 탐지 (Absence Detection)**: 모델이 비교적 잘 인식 (~67% 거부율)
-- **정보 충돌 탐지 (Conflict Detection)**: **모델/전략/난이도에 따라 극적 차이** (0%~80%)
+- 정보 부재 탐지 (Absence Detection): 모델이 비교적 잘 인식 (~67% 거부율)
+- 정보 충돌 탐지 (Conflict Detection): 모델/전략/난이도에 따라 극적 차이 (0%~80%)
 
-이 비대칭을 체계적으로 분석하기 위해 **IC Conflict Difficulty Ladder (L1-L4)**를 도입하여, 어떤 종류의 충돌을 탐지하고 어떤 종류에서 실패하는지 연구합니다.
+이 비대칭을 체계적으로 분석하기 위해 IC Conflict Difficulty Ladder (L1-L4)를 도입하여, 어떤 종류의 충돌을 탐지하고 어떤 종류에서 실패하는지 연구합니다.
 
 ## 변환 체계 (Transformation Taxonomy)
 
 원본 금융 문제에서 풀이에 필요한 데이터를 변형하여 "unsolvable" 문제를 생성합니다.
+변환은 크게 두 가지 메타인지 차원으로 나뉩니다. 두 차원을 비교하여 LLM이 어떤 유형의 정보 결함에 더 취약한지 분석합니다.
 
-### Absence Detection (대조군)
+### Absence Detection (정보 부재)
+
+데이터를 제거하여 풀이에 필요한 정보가 없는 상태를 만듭니다.
 
 | 유형 | 방법 | 탐지 난이도 |
 |------|------|-------------|
-| **EA-partial** | 특정 값을 `N/A`로 교체 | LOW — 마커가 보임 |
-| **EA-full** | 컬럼/키 전체 삭제 | MODERATE — 구조 변화 |
-| **SA** | 마커 없이 조용히 삭제 | HIGH — 단서 없음 |
+| EA-partial | 특정 값을 `N/A`로 교체 | LOW — 마커가 보임 |
+| EA-full | 컬럼/키 전체 삭제 | MODERATE — 구조 변화 |
+| SA | 마커 없이 조용히 삭제 | HIGH — 단서 없음 |
 
-### Conflict Detection (실험군) — IC Difficulty Ladder
+### Conflict Detection (정보 충돌) — IC Difficulty Ladder
+
+데이터를 제거하는 대신, 모순되는 데이터를 삽입하여 어떤 값을 신뢰해야 할지 판단이 필요한 상태를 만듭니다. 충돌의 종류에 따라 4단계로 세분화합니다.
 
 | Level | 유형 | 방법 | 탐지 난이도 |
 |-------|------|------|-------------|
-| **IC-L1** | 10x 타이포 | 숫자를 10배 틀리게 교체 | LOW |
-| **IC-L2** | 단위 불일치 | 같은 값을 다른 단위(million/billion)로 삽입 + 1.5x 오류 | MODERATE |
-| **IC-L3** | 권위 충돌 | 권위 있는 출처("감사보고서")가 1.5x 모순값 제시 | HIGH |
-| **IC-L4** | 기간 합산 불일치 | 분기별 값의 합계 ≠ 연간 총계 | HIGH |
+| IC-L1 | 10x 타이포 | 숫자를 10배 틀리게 교체 | LOW |
+| IC-L2 | 단위 불일치 | 같은 값을 다른 단위(million/billion)로 삽입 + 1.5x 오류 | MODERATE |
+| IC-L3 | 권위 충돌 | 권위 있는 출처("감사보고서")가 1.5x 모순값 제시 | HIGH |
+| IC-L4 | 기간 합산 불일치 | 분기별 값의 합계 ≠ 연간 총계 | HIGH |
 
 ### 보조
 
 | 유형 | 방법 | 비고 |
 |------|------|------|
-| **TA** | 연도 → "해당 기간" | ~15문제만 적용 가능, 별도 보고 |
+| TA | 연도 → "해당 기간" | ~15문제만 적용 가능, 별도 보고 |
 
 ## MC Score (메타인지 점수)
 
@@ -130,23 +135,23 @@ python experiments/generate_human_review.py --input batch_transformations_0_120.
 | 작업자C | `human_review_0_120.html?assignee=이름C&start=60&end=90` |
 | 작업자D | `human_review_0_120.html?assignee=이름D&start=90&end=120` |
 
-각 문제에서 **8개 탭** (EA-partial, EA-full, SA, IC-L1~L4, TA)을 확인하고:
+각 문제에서 8개 탭 (EA-partial, EA-full, SA, IC-L1~L4, TA)을 확인하고:
 
-- **승인**: 변환이 올바르고, 남은 정보로는 문제를 풀 수 없음
-- **수정 필요**: 방향은 맞지만 개선이 필요
-- **부적절**: 변환 후에도 문제를 풀 수 있거나 변환이 의미 없음
+- 승인: 변환이 올바르고, 남은 정보로는 문제를 풀 수 없음
+- 수정 필요: 방향은 맞지만 개선이 필요
+- 부적절: 변환 후에도 문제를 풀 수 있거나 변환이 의미 없음
 
-> HTML 상단의 **"변환 유형 가이드 & 리뷰 기준"**을 펼치면 각 변환 타입의 상세 설명과 리뷰 체크포인트를 확인할 수 있습니다.
+> HTML 상단의 "변환 유형 가이드 & 리뷰 기준"을 펼치면 각 변환 타입의 상세 설명과 리뷰 체크포인트를 확인할 수 있습니다.
 
 #### EA-full 리뷰 팁
 
-Python Solution의 **초록색(●) 변수**에 해당하는 칼럼이 context에서 **정말 삭제됐는지** 확인하세요. 초록 변수와 일치하는 칼럼이 아직 남아있으면 모델이 값을 읽을 수 있으므로 변환이 불충분합니다.
+Python Solution의 초록색(●) 변수에 해당하는 칼럼이 context에서 정말 삭제됐는지 확인하세요. 초록 변수와 일치하는 칼럼이 아직 남아있으면 모델이 값을 읽을 수 있으므로 변환이 불충분합니다.
 
-> ⚠️ "역산 가능 경고"가 표시된 경우: 삭제된 칼럼 값이 남은 칼럼들로 계산될 수 있다는 자동 탐지 결과입니다. 경고가 있으면 더 신중히 확인해주세요.
+> 역산 가능 경고가 표시된 경우: 삭제된 칼럼 값이 남은 칼럼들로 계산될 수 있다는 자동 탐지 결과입니다. 경고가 있으면 더 신중히 확인해주세요.
 
 ### 4. 리뷰 결과 제출
 
-리뷰 완료 후 **"내보내기"** 버튼 → JSON 파일 다운로드 → 관리자에게 전달
+리뷰 완료 후 "내보내기" 버튼 → JSON 파일 다운로드 → 관리자에게 전달
 
 ### 5. 팀 토론
 
@@ -160,10 +165,10 @@ python experiments/generate_review_summary.py
 # review_summary.html을 팀 전체와 공유 → 함께 토론
 ```
 
-`review_summary.html`에서 확인할 수 있는 것:
+review_summary.html에서 확인할 수 있는 것:
 - 변환 타입별 승인율
 - 리뷰어별 통계
-- **"토론 필요"** 섹션: 수정필요/부적절로 판정된 건만 필터링
+- "토론 필요" 섹션: 수정필요/부적절로 판정된 건만 필터링
 - 전체 120문제 × 8타입 매트릭스
 
 ### 6. 승인된 변환으로 모델 실험
@@ -180,12 +185,12 @@ python experiments/run_batch_evaluation.py \
 
 | 전략 | 설명 |
 |------|------|
-| `standard` | 기본 COT/POT (대조군) |
+| `standard` | 기본 COT/POT |
 | `metacognitive` | "정보 부족 시 INSUFFICIENT_INFORMATION" 지시 |
 | `self_verification` | DATA AUDIT → SOLUTION 2단계 |
 | `contradiction_aware` | 모순 데이터 탐지 지시 (3단계) |
-| `ic_fewshot` | **IC 탐지용**: 모순 예시를 few-shot으로 제공 |
-| `ic_crosscheck` | **IC 탐지용**: 모든 수치 교차 검증 의무화 |
+| `ic_fewshot` | IC 탐지용: 모순 예시를 few-shot으로 제공 |
+| `ic_crosscheck` | IC 탐지용: 모든 수치 교차 검증 의무화 |
 
 ## 모델 셋
 
