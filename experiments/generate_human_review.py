@@ -628,15 +628,46 @@ h1 {{ font-size: 22px; font-weight: 600; }}
           <p style="margin-top:6px;"><strong>리뷰 체크:</strong> 삭제 후 문맥이 자연스러운지, 삭제된 정보 없이 정말 풀 수 없는지</p>
         </div>
 
+        <div class="guide-card" style="border-color:#22c55e;">
+          <h3 style="color:#22c55e;">IC-L1 (10x 타이포)</h3>
+          <p><strong>방법:</strong> 숫자를 10배 틀리게 교체 (자릿수 오류)</p>
+          <p><strong>목적:</strong> 가장 명백한 수치 오류를 LLM이 잡는지 (IC 기본선)</p>
+          <p><strong>탐지 난이도:</strong> <span class="guide-tag" style="background:#052e16;color:#22c55e;">LOW</span> 10배 차이는 명백함</p>
+          <div class="example">원본: Revenue 2024 = $10M
+변환: Revenue 2024 = $100M  (10배 오류)</div>
+          <p style="margin-top:6px;"><strong>리뷰 체크:</strong> 10배 오류가 문맥상 눈에 띄는지, 풀이에 사용되는 값인지</p>
+        </div>
+
+        <div class="guide-card" style="border-color:#3b82f6;">
+          <h3 style="color:#3b82f6;">IC-L2 (단위 불일치)</h3>
+          <p><strong>방법:</strong> 같은 수치를 다른 단위(million/billion, %/bps)로 삽입하되, 1.5x 오류 포함</p>
+          <p><strong>목적:</strong> 단위 변환을 교차 검증하는 능력 테스트</p>
+          <p><strong>탐지 난이도:</strong> <span class="guide-tag" style="background:#422006;color:#f59e0b;">MODERATE</span> 단위 이해 필요</p>
+          <div class="example">원본: "Total revenue was $500 million"
+변환: + "According to a separate filing, this figure was reported as 0.75 billion."
+ (실제론 0.5B여야 하는데 0.75B = 1.5x 오류)</div>
+          <p style="margin-top:6px;"><strong>리뷰 체크:</strong> 단위 변환이 실제로 틀린지 (올바른 변환이면 충돌이 아님!), 삽입이 자연스러운지</p>
+        </div>
+
         <div class="guide-card" style="border-color:#ef4444;">
-          <h3 style="color:#ef4444;">IC (정보 충돌 - Information Conflict)</h3>
-          <p><strong>방법:</strong> 원래 값의 1.5배인 모순 데이터를 삽입</p>
-          <p><strong>목적:</strong> LLM이 수치 모순을 탐지하는지 (부재와 다른 메타인지 능력)</p>
-          <p><strong>탐지 난이도:</strong> <span class="guide-tag" style="background:#7f1d1d;color:#ef4444;">VERY HIGH</span> 현재 전 모델 실패</p>
+          <h3 style="color:#ef4444;">IC-L3 (권위 충돌)</h3>
+          <p><strong>방법:</strong> "감사보고서" 등 권위 있는 출처를 언급하며 원래 값의 1.5배인 모순 데이터 삽입</p>
+          <p><strong>목적:</strong> 권위적 출처에서 오는 모순을 LLM이 탐지하는지 (핵심 IC 테스트)</p>
+          <p><strong>탐지 난이도:</strong> <span class="guide-tag" style="background:#7f1d1d;color:#ef4444;">HIGH</span> 모델이 권위 출처를 무조건 신뢰하는 경향</p>
           <div class="example">원본: Revenue 2024 = $100M
 변환: Revenue 2024 = $150M
-      Revenue 2024 (conflicting report) = $100M</div>
+      "Note: discrepancy — one source reports $150M, while another shows $100M."</div>
           <p style="margin-top:6px;"><strong>리뷰 체크:</strong> 모순이 자연스럽게 삽입되었는지, 모순 대상이 풀이에 사용되는 값인지</p>
+        </div>
+
+        <div class="guide-card" style="border-color:#f59e0b;">
+          <h3 style="color:#f59e0b;">IC-L4 (기간 합산 불일치)</h3>
+          <p><strong>방법:</strong> 분기별 값의 합계와 다른 연간 총계를 삽입 (또는 한 분기 값을 수정)</p>
+          <p><strong>목적:</strong> 시계열 데이터의 내부 일관성 검증 능력 테스트</p>
+          <p><strong>탐지 난이도:</strong> <span class="guide-tag" style="background:#7f1d1d;color:#ef4444;">HIGH</span> 산술 검증 필요</p>
+          <div class="example">원본: Q1=$10M, Q2=$12M, Q3=$11M, Q4=$15M  (합계=$48M)
+변환: + "The total for the reporting period was $40.80M"  (실제 합계와 불일치)</div>
+          <p style="margin-top:6px;"><strong>리뷰 체크:</strong> 합산 불일치가 실제로 존재하는지, 사용된 숫자들이 같은 시리즈인지</p>
         </div>
 
         <div class="guide-card" style="border-color:#6b7280;">
