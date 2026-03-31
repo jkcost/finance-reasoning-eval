@@ -40,7 +40,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TYPE_KEYS = ["EA-partial", "EA-full", "SA", "IC", "TA"]
+TYPE_KEYS = ["EA-partial", "EA-full", "SA", "IC-L1", "IC-L2", "IC-L3", "IC-L4", "TA"]
 
 
 def build_coverage_summary(problems: List[Dict]) -> Dict[str, Any]:
@@ -203,12 +203,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="LLM-based batch transformation pipeline"
     )
-    parser.add_argument(
-        "--start", type=int, default=0, help="Start index (inclusive)"
-    )
-    parser.add_argument(
-        "--end", type=int, default=30, help="End index (exclusive)"
-    )
+    parser.add_argument("--start", type=int, default=0, help="Start index (inclusive)")
+    parser.add_argument("--end", type=int, default=238, help="End index (exclusive)")
     parser.add_argument(
         "--model",
         type=str,
@@ -230,9 +226,7 @@ def main():
     args = parser.parse_args()
 
     # Load hard.json
-    data_path = (
-        project_root / "data/financereasoning/raw/FinanceReasoning/hard.json"
-    )
+    data_path = project_root / "data/financereasoning/raw/FinanceReasoning/hard.json"
 
     with open(data_path, "r", encoding="utf-8") as f:
         dataset = json.load(f)
@@ -241,7 +235,9 @@ def main():
     end = min(len(dataset), args.end)
     output_dir = project_root / args.output_dir
 
-    asyncio.run(run_batch(dataset, start, end, args.model, args.concurrency, output_dir))
+    asyncio.run(
+        run_batch(dataset, start, end, args.model, args.concurrency, output_dir)
+    )
 
 
 if __name__ == "__main__":

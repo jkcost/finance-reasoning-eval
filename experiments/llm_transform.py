@@ -58,14 +58,39 @@ TRANSFORM_SPECS = {
 - 테이블: 행을 삭제하거나 값을 빈칸으로 만들되 구조는 유지
 - 이것이 가장 어려운 변환입니다 — 자연스러움이 핵심입니다.""",
     },
-    "IC": {
-        "name": "Information Conflict",
-        "instruction": """풀이에 사용되는 핵심 값에 모순되는 데이터를 삽입하세요.
-- 원래 값과 다른 값(예: 1.3~1.7배)을 같은 문맥 내에 추가합니다.
+    "IC-L1": {
+        "name": "IC Level 1: Obvious Typo (10x Error)",
+        "instruction": """풀이에 사용되는 핵심 숫자 하나를 10배 틀리게 교체하세요 (자릿수 오류).
+- 예: $10 million → $100 million, 또는 15.3% → 153%
+- 이것은 가장 명백한 수치 오류입니다 — 누구나 눈치챌 수 있어야 합니다.
+- 원본 값을 삭제하고 10배 값으로 교체합니다 (모순 문장을 추가하지 않음).
+- 풀이에 사용되는 값만 대상으로 합니다.""",
+    },
+    "IC-L2": {
+        "name": "IC Level 2: Unit Mismatch",
+        "instruction": """같은 데이터를 다른 단위로 표현하되, 의도적으로 1.5배 오류를 포함하세요.
+- 예: "$500 million" 옆에 "별도 보고서에 따르면 0.75 billion" 삽입 (올바르면 0.5 billion)
+- 단위 쌍: million↔billion, thousand↔million, %↔basis points
+- 핵심: 단위 변환을 직접 해봐야 오류를 발견할 수 있어야 합니다.
+- 풀이에 사용되는 값만 대상으로 합니다.""",
+    },
+    "IC-L3": {
+        "name": "IC Level 3: Authority Conflict",
+        "instruction": """풀이에 사용되는 핵심 값에 모순되는 데이터를 권위 있는 출처와 함께 삽입하세요.
+- 원래 값과 다른 값(1.3~1.7배)을 같은 문맥 내에 추가합니다.
 - 모순이 도메인적으로 현실적이어야 합니다 (예: "수정된 감사 보고서", "분기별 보고서와 연간 보고서의 차이")
 - 어느 값이 맞는지 판단할 수 없는 상황을 만들어야 합니다.
 - 단순히 숫자만 바꾸지 말고, 왜 두 값이 존재하는지 맥락을 제공하세요.
 - 모순 대상은 반드시 풀이에 사용되는 값이어야 합니다.""",
+    },
+    "IC-L4": {
+        "name": "IC Level 4: Cross-Period Conflict",
+        "instruction": """시계열 데이터의 내부 합산 일관성을 깨뜨리세요.
+- 예: Q1+Q2+Q3+Q4의 합이 연간 총계와 다르게 만들기
+- 또는: 개별 항목의 합이 보고된 총합과 일치하지 않게 만들기
+- 기존 숫자를 하나 수정하거나, 불일치하는 총계 문장을 삽입합니다.
+- 문제를 풀기 위해 합산/비교가 필요한 값을 대상으로 합니다.
+- 시계열 또는 항목별 데이터가 없으면 변환 불가로 표시하세요.""",
     },
     "TA": {
         "name": "Temporal Ambiguity",
@@ -422,7 +447,7 @@ class LLMTransformer:
         Returns dict compatible with run_batch_transformation output format.
         """
         if types is None:
-            types = ["EA-partial", "EA-full", "SA", "IC"]
+            types = ["EA-partial", "EA-full", "SA", "IC-L1", "IC-L2", "IC-L3", "IC-L4"]
 
         context = problem.get("context_original", problem.get("context", ""))
         has_context = bool(
