@@ -208,7 +208,20 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
             transformed_ctx = tdata.get("context_transformed", "")
             transformed_q = tdata.get("question_transformed", "")
 
+            # Reverse calculation warning for EA-full
+            reverse_warning = ""
+            if tdata.get("reverse_calculable"):
+                reverse_warning = (
+                    f'<div style="background:#422006;border:1px solid #f59e0b;border-radius:6px;'
+                    f'padding:8px 12px;margin-bottom:8px;font-size:12px;">'
+                    f'<strong style="color:#f59e0b;">&#9888; 역산 가능 경고</strong><br>'
+                    f"{_esc(tdata.get('reverse_explanation', ''))}<br>"
+                    f'<code style="color:#fbbf24;">{_esc(tdata.get("reverse_formula", ""))}</code>'
+                    f"</div>"
+                )
+
             panel_content = (
+                f"{reverse_warning}"
                 f'<div class="transform-desc">'
                 f'<span class="type-info">{_esc(type_desc)}</span>'
                 f"<br>{_esc(desc)}</div>"

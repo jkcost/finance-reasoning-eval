@@ -38,7 +38,8 @@ from apply_transformations_full import (
     transform_type4_markdown,
     transform_sa_text,
 )
-from hardcoded_solution_detector import _solution_uses_hardcoded_values
+from hardcoded_solution_detector import _solution_uses_hardcoded_values  # noqa: E402
+from reverse_calc_detector import analyze_batch_reversibility  # noqa: E402
 from ic_difficulty_ladder import (  # noqa: E402
     transform_ic_l1_json,
     transform_ic_l1_text,
@@ -247,6 +248,20 @@ def run_batch(dataset: List[Dict], start: int, end: int) -> Dict[str, Any]:
 
         if (i + 1) % 20 == 0 or (i + 1) == len(subset):
             logger.info(f"  진행: {i + 1}/{len(subset)}")
+
+    # Reverse calculation detection for EA-full
+    logger.info("EA-full 역산 가능성 분석 중...")
+    reversible = analyze_batch_reversibility(problems)
+    for qid, rinfo in reversible.items():
+        for p in problems:
+            if p["question_id"] == qid:
+                ea_full = p["transformations"].get("EA-full", {})
+                if ea_full.get("success"):
+                    ea_full["reverse_calculable"] = True
+                    ea_full["reverse_explanation"] = rinfo["details"]["explanation"]
+                    ea_full["reverse_formula"] = rinfo["details"]["formula"]
+                break
+    logger.info(f"  역산 가능: {len(reversible)}건 탐지")
 
     # Coverage summary
     total = len(problems)
