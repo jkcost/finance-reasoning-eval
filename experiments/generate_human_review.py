@@ -270,6 +270,32 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                     f"</div></div>"
                 )
 
+            # Model response (if evaluation data available)
+            model_response = tdata.get("model_response", "")
+            if model_response:
+                model_name = tdata.get("model_name", "unknown")
+                response_type = tdata.get("response_type", "")
+                case_type = tdata.get("case_type", 0)
+                is_correct = tdata.get("is_correct", False)
+
+                case_labels = {1: "거부 (C1)", 2: "오답 (C2)", 3: "정답 (C3)"}
+                case_label = case_labels.get(case_type, "?")
+                case_colors = {1: "#22c55e", 2: "#f59e0b", 3: "#ef4444"}
+                case_color = case_colors.get(case_type, "#666")
+
+                panel_content += (
+                    f'<div class="model-response-box">'
+                    f'<div class="model-response-header">'
+                    f'<span class="model-name">{_esc(model_name)}</span> '
+                    f'<span class="case-badge" style="background:{case_color}20;color:{case_color};'
+                    f'border:1px solid {case_color};padding:2px 8px;border-radius:4px;font-size:11px;">'
+                    f"{case_label}</span> "
+                    f'<span style="color:var(--text2);font-size:12px;">{_esc(response_type)}</span>'
+                    f"</div>"
+                    f'<pre class="model-response-content">{_esc(model_response[:1500])}</pre>'
+                    f"</div>"
+                )
+
             # Judgment UI
             panel_content += f"""
             <div class="judgment-box" id="judgment-{qid}-{ttype}">
@@ -522,6 +548,12 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .edit-btn:hover {{ background: var(--amber); color: black; }}
 .edit-btn.editing {{ background: var(--amber); color: black; }}
 .edit-area {{ width: 100%; min-height: 200px; max-height: 400px; background: var(--bg); border: 2px solid var(--amber); border-radius: 6px; color: var(--text); padding: 10px; font-size: 11px; font-family: monospace; white-space: pre-wrap; resize: vertical; }}
+
+/* Model Response */
+.model-response-box {{ margin-top: 10px; padding: 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; }}
+.model-response-header {{ display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }}
+.model-name {{ font-weight: 600; font-size: 12px; color: var(--blue); }}
+.model-response-content {{ font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; color: #c9d1d9; line-height: 1.4; }}
 
 /* Judgment */
 .judgment-box {{ margin-top: 10px; padding: 10px; background: var(--surface2); border-radius: 8px; border: 1px solid var(--border); }}
@@ -1231,6 +1263,12 @@ def main():
         default=None,
         help="Output HTML filename",
     )
+    parser.add_argument(
+        "--eval",
+        type=str,
+        default=None,
+        help="Evaluation results JSON (adds model responses to review)",
+    )
     args = parser.parse_args()
 
     project_root = Path(__file__).parent.parent
@@ -1265,6 +1303,34 @@ def main():
             logger.info(f"Annotations 로드: {ann_path} ({count}개 판정)")
         else:
             logger.warning(f"Annotations 파일 없음: {ann_path} (빈 상태로 생성)")
+
+    # Load evaluation results if provided
+    eval_map = {}  # {(question_id, transformation_type): eval_result}
+    if args.eval:
+        eval_path = results_dir / args.eval
+        if eval_path.exists():
+            with open(eval_path, "r", encoding="utf-8") as f:
+                eval_data = json.load(f)
+            for r in eval_data.get("results", []):
+                key = (r.get("question_id", ""), r.get("transformation_type", ""))
+                eval_map[key] = r
+            logger.info(f"Evaluation 로드: {eval_path} ({len(eval_map)}건)")
+
+            # Inject eval results into problem transformations
+            for problem in data["problems"]:
+                qid = problem.get("question_id", "")
+                for ttype, tdata in problem.get("transformations", {}).items():
+                    if not tdata.get("success"):
+                        continue
+                    eval_result = eval_map.get((qid, ttype))
+                    if eval_result:
+                        tdata["model_response"] = eval_result.get("raw_response", "")
+                        tdata["model_name"] = eval_result.get("model", "")
+                        tdata["response_type"] = eval_result.get("response_type", "")
+                        tdata["is_correct"] = eval_result.get("is_correct", False)
+                        tdata["case_type"] = eval_result.get("case_type", 0)
+        else:
+            logger.warning(f"Evaluation 파일 없음: {eval_path}")
 
     html_content = generate_html(data, preloaded_annotations=preloaded)
 
