@@ -731,6 +731,37 @@ h1 {{ font-size: 22px; font-weight: 600; }}
       </div>
 
       <div class="guide-section">
+        <h3>모델 응답 읽는 법</h3>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:8px;">
+          각 변환 탭에 gpt-4o-mini가 해당 변환된 문제를 풀려고 시도한 응답이 표시됩니다.
+          FinanceReasoning 원논문 방식(POT: Program of Thought)으로 모델이 Python 코드를 생성하고,
+          이 코드를 실제로 실행한 결과를 정답과 비교합니다.
+        </p>
+        <table>
+          <tr><th>배지</th><th>의미</th><th>리뷰 시사점</th></tr>
+          <tr>
+            <td style="color:#22c55e;">거부 (C1)</td>
+            <td>모델이 정보 부족/충돌을 인식하고 INSUFFICIENT_INFORMATION 반환</td>
+            <td>변환이 유효할 가능성 높음 (모델이 unsolvable로 판단)</td>
+          </tr>
+          <tr>
+            <td style="color:#f59e0b;">오답 (C2)</td>
+            <td>모델이 답을 시도했지만 틀림</td>
+            <td>변환이 혼란을 줬지만 모델이 명시적으로 거부하지는 않음</td>
+          </tr>
+          <tr>
+            <td style="color:#ef4444;">정답 (C3)</td>
+            <td>변환에도 불구하고 모델이 정답을 맞춤</td>
+            <td>변환이 불충분할 가능성 높음 — 집중 확인 필요</td>
+          </tr>
+        </table>
+        <p style="font-size:11px;color:var(--text2);margin-top:6px;">
+          C3(정답)인데 변환이 올바르다면: 모델이 삭제된 데이터를 암기(memorization)했거나
+          남은 데이터에서 역산한 것입니다. 이 경우는 리뷰에서 메모를 남겨주세요.
+        </p>
+      </div>
+
+      <div class="guide-section">
         <h3>판정 기준</h3>
         <table>
           <tr><th>판정</th><th>기준</th><th>예시</th></tr>
