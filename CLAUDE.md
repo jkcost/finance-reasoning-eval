@@ -112,14 +112,17 @@ GOOGLE_API_KEY=...
 
 **논문 Gap**: FinanceReasoning(ACL 2025)이 future work로 남긴 "정보 부족 상황에서 LLM의 자발적 clarification-seeking 행동 모델링"을 구현
 
-## 연구 질문 (4개)
+## 연구 질문 (5개)
 
 | RQ | 질문 | 핵심 지표 |
 |----|------|-----------|
-| RQ1 | LLM이 금융 문제의 정보 부족을 탐지할 수 있는가? | Refusal Accuracy |
-| RQ2 | 모델 크기/유형이 메타인지 능력에 어떤 영향을 미치는가? | MC Score by Model Type |
-| RQ3 | RAG(금융 함수 검색)가 메타인지를 개선하는가? | RAG vs No-RAG Delta |
-| RQ4 | 메타인지 금융 추론의 비용-성능 최적 전략은? | MC Score / Cost |
+| RQ1 | LLM은 정보 부재와 정보 충돌에서 비대칭적 메타인지 능력을 보이는가? | Refusal Rate: absence vs IC |
+| RQ2 | 모델 크기/유형이 충돌 탐지 능력에 어떤 영향을 미치는가? | IC detection rate by tier |
+| RQ3 | 프롬프트 전략이 충돌 탐지를 개선할 수 있는가? | IC detection by strategy |
+| RQ4 | IC 난이도 레벨(L1-L4)이 탐지 실패를 예측하는가? | L1-L4 gradient |
+| RQ5 | 인간 금융 전문가 대비 LLM의 충돌 탐지 능력은? | Human vs LLM |
+
+Note: 기존 RQ3 (RAG)는 본 논문 scope에서 제외. 기존 RQ4 (비용분석)는 Phase D로 이동.
 
 ## 메타인지 메트릭
 
@@ -148,10 +151,11 @@ MC Score = Refusal_F1 × (1 - Hallucination_Rate)
 
 | Phase | 설명 | 상태 |
 |-------|------|------|
-| A | 원본 문제 baseline 정확도 | done (economic, n=5, hard) |
-| B | 변환된 unsolvable 문제 → 거부/탐지 측정 | done (economic, n=5, hard) |
-| C | RAG 활성화 상태에서 Phase B 반복 | pending |
-| D | A~C 결과 종합 → 비용-최적 전략 분석 | pending |
+| 0 | 238문제 전수 LLM 변환 (8타입) | done (gemini-2.5-flash, 98.9% 성공) |
+| Human Review | 변환 품질 검증 (4명 분배) | 진행 중 |
+| A | 원본 문제 baseline 정확도 | done (economic, pilot) |
+| B | 변환된 문제 → 거부/탐지 측정 | done (economic pilot), balanced 대기 |
+| D | 종합 분석 | balanced 실험 후 |
 
 ## 변환 분류 체계 (v2: 4 메인 + 1 보조)
 
@@ -162,83 +166,89 @@ MC Score = Refusal_F1 × (1 - Hallucination_Rate)
 | **충돌 탐지** | — | IC |
 | *(보조) 모호성* | — | *TA* |
 
-| Type | 이름 | 설명 | 현재 상태 |
-|------|------|------|-----------|
-| EA-partial | Explicit Absence (Partial) | `[DATA MISSING]`/N/A 마커로 부분 제거 | 작동 (모델이 잘 탐지) |
-| EA-full | Explicit Absence (Full) | 키/컬럼 전체 삭제 (Markdown/JSON만) | 작동 |
-| SA | Silent Absence | 마커 없이 무표지 제거. Text: 핵심 문장 삭제 | 작동 (모델이 잘 탐지) |
-| IC | Information Conflict | 1.5× 모순값 삽입 | **전 모델 실패** — 모순 탐지 못함 |
-| TA (보조) | Temporal Ambiguity | 연도를 모호한 표현으로 대체 (~11개 hard 문제) | 보조 분석으로 별도 보고 |
+Absence Detection (정보 부재):
+| Type | 이름 | 설명 |
+|------|------|------|
+| EA-partial | Explicit Absence (Partial) | 값을 N/A 마커로 교체 |
+| EA-full | Explicit Absence (Full) | 키/컬럼 전체 삭제 |
+| SA | Silent Absence | 마커 없이 무표지 제거 |
+
+Conflict Detection (정보 충돌) — IC Difficulty Ladder:
+| Level | 이름 | 설명 |
+|-------|------|------|
+| IC-L1 | 10x 타이포 | 숫자를 10배 틀리게 교체 |
+| IC-L2 | 단위 불일치 | 같은 값을 다른 단위로 삽입 + 1.5x 오류 |
+| IC-L3 | 권위 충돌 | 권위 있는 출처가 1.5x 모순값 제시 |
+| IC-L4 | 기간 합산 불일치 | 분기합 ≠ 연간총계 |
+
+보조:
+| TA | Temporal Ambiguity | 연도를 모호한 표현으로 대체 (보조, TA는 LLM 파이프라인에서 skip) |
 
 레거시 매핑: Type 1→EA-partial, Type 2→EA-full, Type 3→TA, Type 4→SA, Type 5→IC
 
-## 프롬프트 전략 (4가지)
+## 프롬프트 전략 (6가지)
 
-1. **standard**: 기존 COT/POT (대조군)
-2. **metacognitive**: "정보 부족 시 INSUFFICIENT_INFORMATION" 지시 추가
-3. **self_verification**: DATA AUDIT(필요 데이터 목록화) → SOLUTION(충분할 때만)
-4. **contradiction_aware**: 모순 데이터 탐지 지시 추가
+1. standard: 기존 COT/POT
+2. metacognitive: "정보 부족 시 INSUFFICIENT_INFORMATION" 지시
+3. self_verification: DATA AUDIT → SOLUTION 2단계
+4. contradiction_aware: 모순 데이터 탐지 3단계
+5. ic_fewshot: IC 탐지용 few-shot 예시 제공 (mitigation)
+6. ic_crosscheck: 모든 수치 교차 검증 의무화 (mitigation)
 
 ## 핵심 파일 구조
 
-### 메타인지 평가 파일
+### 핵심 파일
 ```
 evaluation/
-├── metacognitive_metrics.py   # MetacognitiveResult, MC Score 계산
-├── refusal_detector.py        # 응답 분류 (refused/caveat/confident/error)
-├── reasoning_trace_analyzer.py # 추론 추적 기반 변환 검증 엔진
+├── metacognitive_metrics.py        # MC Score 계산
+├── refusal_detector.py             # 응답 분류 (refused/caveat/confident/error)
+├── reverse_calc_detector.py        # EA-full 역산 가능성 자동 탐지
+├── reasoning_trace_analyzer.py     # 추론 추적 분석
 experiments/
-├── run_metacognitive_experiment.py        # 메인 실험 (Phase A~D, 샘플링 기반)
-├── generate_metacognitive_dashboard.py    # HTML 대시보드 생성
-├── apply_transformations_full.py          # 4+1 변환 함수(EA/SA/IC/TA) + validate_transformation()
-├── run_validation_pipeline.py             # 추론 추적 검증 파이프라인 CLI
-├── generate_validation_report.py          # 검증 결과 HTML 리포트
-├── run_batch_transformation.py            # [NEW] 전수 변환 파이프라인 (Phase 0)
-├── run_batch_evaluation.py                # [NEW] 배치 평가 파이프라인 (Phase 1)
-├── generate_batch_report.py               # [NEW] 배치 리포트 생성 (Phase 2)
-└── results/metacognitive/                 # 실험 결과 + dashboard.html
+├── llm_transform.py                # LLM 기반 변환 엔진 (핵심)
+├── ic_difficulty_ladder.py         # IC L1-L4 규칙 기반 변환 (보조)
+├── conflict_salience_scorer.py     # IC salience 회귀분석 도구
+├── run_batch_transformation.py     # 전수 LLM 변환 파이프라인
+├── run_batch_evaluation.py         # 배치 평가 (checkpoint/resume 지원)
+├── run_metacognitive_experiment.py # 메인 실험 (Phase A~D)
+├── generate_human_review.py        # Human Review HTML 생성 (8타입 + 모델 응답)
+├── generate_review_summary.py      # 팀 토론용 요약 HTML
+├── human_baseline_study.py         # 인간 비교 설문 생성
+├── apply_transformations_full.py   # 변환 로직 (레거시 규칙 기반)
+├── merge_annotations.py            # Annotation 머지
+└── results/metacognitive/          # 실험 결과 (.gitignore)
+    └── annotations/                # 리뷰어 JSON
+tests/
+├── test_ic_difficulty_ladder.py    # IC L1-L4 테스트 (17개)
+└── test_conflict_salience_scorer.py # Salience 테스트 (8개)
+paper/
+├── paper_outline.md                # 논문 구조 + 실험 목록
+└── reviews/                        # 관련 논문 리뷰 (7편)
 ```
 
 ## 실험 실행 명령어
 
 ```bash
-# Phase A: Baseline
-python experiments/run_metacognitive_experiment.py --phase A --budget economic --n 5 --level hard
+# === 현재 워크플로우 ===
 
-# Phase B: Metacognitive 테스트
-python experiments/run_metacognitive_experiment.py --phase B --budget economic --n 5 --level hard --prompt-strategy metacognitive
+# 1. LLM 변환 (238문제 전체, API 필요)
+python experiments/run_batch_transformation.py --start 0 --end 238
 
-# Phase B: 전략 비교 (3가지 프롬프트 전략 모두)
-python experiments/run_metacognitive_experiment.py --phase B --budget economic --n 5 --prompt-strategy all
+# 2. Human Review HTML 생성 (모델 응답 포함)
+python experiments/generate_human_review.py \
+    --input batch_transformations_0_238.json \
+    --eval batch_evaluation_0_238.json
 
-# Phase C: RAG 영향 (아직 미실행)
-python experiments/run_metacognitive_experiment.py --phase C --budget economic --n 5 --rag
+# 3. 모델 평가 (checkpoint/resume 지원, API 필요)
+python experiments/run_batch_evaluation.py \
+    --input experiments/results/metacognitive/batch_transformations_0_238.json \
+    --budget balanced --prompt-strategy metacognitive
 
-# Phase D: 분석 (API 호출 없음)
-python experiments/run_metacognitive_experiment.py --phase D --results-dir experiments/results/metacognitive/
+# 4. 팀 토론 요약 (리뷰 완료 후)
+python experiments/generate_review_summary.py
 
-# 대시보드 생성
-python experiments/generate_metacognitive_dashboard.py --results-dir experiments/results/metacognitive/
-
-# 변환 검증 파이프라인 (규칙 기반)
-python experiments/run_validation_pipeline.py
-
-# 변환 검증 파이프라인 (LLM Judge 포함)
-python experiments/run_validation_pipeline.py --with-llm-judge
-
-# 검증 결과 HTML 리포트
-python experiments/generate_validation_report.py
-
-# === 배치 파이프라인 (전수 변환 + 평가) ===
-
-# Phase 0: 변환 생성 (API 호출 없음, 즉시 완료)
-python experiments/run_batch_transformation.py --start 0 --end 30
-
-# Phase 1: 모델 평가 (API 호출)
-python experiments/run_batch_evaluation.py --input experiments/results/metacognitive/batch_transformations_0_30.json --budget balanced
-
-# Phase 2: HTML 리포트
-python experiments/generate_batch_report.py
+# 5. 테스트
+python -m pytest tests/ -v
 ```
 
 ## 최근 실험 결과 (2026-02-19, hard 5문제, economic)
@@ -258,9 +268,9 @@ python experiments/generate_batch_report.py
 | gemini-2.5-flash | 66.7% | 33.3% | 0.767 |
 
 ### 핵심 발견
-- **EA-partial/SA (정보 부재)**: 모든 모델이 잘 탐지 (metacognitive 프롬프트 사용 시)
-- **IC (정보 충돌)**: **전 모델 실패** — "audited report" 같은 권위 표현 시 무조건 새 값 채택, 모순 자체를 인식 못함
-- 충돌 탐지가 부재 탐지보다 훨씬 어려운 메타인지 과제
+- 정보 부재 탐지 (EA/SA): 모델이 비교적 잘 인식 (~67% 거부율)
+- 정보 충돌 탐지 (IC): 모델/전략/난이도에 따라 극적 차이 (0%~80%)
+- IC 탐지는 "전 모델 실패"가 아니라 "조건부 실패" — 어떤 조건에서 성공/실패하는가가 핵심 연구 질문
 
 ## 변환 구현 원칙 (CRITICAL)
 
@@ -283,12 +293,15 @@ python experiments/generate_batch_report.py
 
 ## 다음 단계 (TODO)
 
-1. **[진행중] LLM 기반 변환 파이프라인** — 규칙 기반을 LLM 기반으로 교체
-2. **Human Review** — 120문제 변환 품질 검증 (4명 분배)
-3. **balanced 모델셋 실행** — 더 큰 모델에서 IC 결과 확인
-4. **프롬프트 전략 비교** — 4가지 전략 비교
-5. **Phase C: RAG 영향**
-6. **n 확대** — 통계적 신뢰도 확보
+1. Human Review 진행 중 — 238문제 × 8타입 변환 품질 검증 (4명 분배)
+2. Human Review 완료 후 → balanced 모델셋 실험 (GPT-4o, Claude Sonnet, Gemini Pro)
+3. Mitigation 실험 — ic_fewshot, ic_crosscheck 전략 효과 검증
+4. Human Baseline Study — 금융 전문가 5-10명 비교
+5. 논문 초고 작성 (Methodology, Related Work 먼저)
+
+후속 연구 (TODOS.md 참조):
+- Cross-Domain Validation (법률/의료)
+- Attention Pattern Analysis (GPU 확보 시)
 
 ## 관련 논문 리뷰
 

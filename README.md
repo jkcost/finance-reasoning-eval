@@ -73,15 +73,16 @@ finance_LLM/
 │   └── reasoning_trace_analyzer.py   #   추론 추적 분석
 │
 ├── experiments/                      # 실험 파이프라인
-│   ├── apply_transformations_full.py #   변환 로직 (EA/SA 기존 5타입)
-│   ├── ic_difficulty_ladder.py       #   IC L1-L4 난이도 변환 모듈
+│   ├── llm_transform.py             #   LLM 기반 변환 엔진 (핵심)
+│   ├── ic_difficulty_ladder.py       #   IC L1-L4 규칙 기반 변환 (보조)
 │   ├── conflict_salience_scorer.py   #   IC salience 회귀분석 도구
-│   ├── generate_batch_transformations.py  # 변환 생성 (규칙 기반, API 불필요)
+│   ├── run_batch_transformation.py   #   전수 LLM 변환 파이프라인
 │   ├── run_batch_evaluation.py       #   모델 평가 (checkpoint/resume 지원)
 │   ├── run_metacognitive_experiment.py #  메인 실험 (Phase A~D)
-│   ├── generate_human_review.py      #   Human Review HTML 생성
-│   ├── generate_review_summary.py    #   팀 토론용 요약 HTML 생성
+│   ├── generate_human_review.py      #   Human Review HTML (모델 응답 포함)
+│   ├── generate_review_summary.py    #   팀 토론용 요약 HTML
 │   ├── human_baseline_study.py       #   인간 비교 설문 생성
+│   ├── apply_transformations_full.py #   변환 로직 (레거시 규칙 기반)
 │   └── results/metacognitive/        #   실험 결과 (.gitignore)
 │       └── annotations/              #   리뷰어 annotation JSON
 │
