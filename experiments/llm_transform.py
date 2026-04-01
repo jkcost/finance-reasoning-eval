@@ -258,7 +258,7 @@ class LLMTransformer:
             "contents": [{"parts": [{"text": user}]}],
             "generationConfig": {
                 "temperature": 0.1,
-                "maxOutputTokens": 4096,
+                "maxOutputTokens": 8192,
                 "responseMimeType": "application/json",
             },
         }
@@ -305,7 +305,7 @@ class LLMTransformer:
         }
         payload = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "system": system,
             "messages": [{"role": "user", "content": user}],
             "temperature": 0.1,
