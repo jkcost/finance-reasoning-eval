@@ -355,17 +355,130 @@ class LLMTransformer:
 
         # Strategy 4: Fix common JSON issues and retry
         cleaned = text
-        # Remove trailing commas before } or ]
         cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
-        # Fix unescaped newlines in strings
         cleaned = cleaned.replace("\n", "\\n")
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
             pass
 
+        # Strategy 5: Fix markdown pipe/table issues in JSON string values
+        # Markdown tables with | break JSON when not properly escaped
+        cleaned = self._fix_json_string_values(text)
+        if cleaned:
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 6: Extract key fields manually with regex
+        extracted = self._extract_fields_manually(text, has_context)
+        if extracted:
+            return extracted
+
         logger.debug(f"JSON 파싱 실패 — raw: {text[:200]}")
         return {"is_transformable": False, "reason_if_not": "JSON 파싱 실패"}
+
+    def _fix_json_string_values(self, text: str) -> Optional[str]:
+        """Fix unescaped characters inside JSON string values.
+
+        Handles: newlines, tabs, backslashes, and control characters
+        inside quoted strings that break JSON parsing.
+        """
+        # Find the outermost { ... }
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1:
+            return None
+
+        json_text = text[start : end + 1]
+
+        # Fix unescaped newlines inside string values
+        # Replace actual newlines with \\n only inside quoted strings
+        result = []
+        in_string = False
+        escape_next = False
+        for ch in json_text:
+            if escape_next:
+                result.append(ch)
+                escape_next = False
+                continue
+            if ch == "\\":
+                escape_next = True
+                result.append(ch)
+                continue
+            if ch == '"':
+                in_string = not in_string
+                result.append(ch)
+                continue
+            if in_string and ch == "\n":
+                result.append("\\n")
+                continue
+            if in_string and ch == "\t":
+                result.append("\\t")
+                continue
+            result.append(ch)
+
+        return "".join(result)
+
+    def _extract_fields_manually(
+        self, text: str, has_context: bool
+    ) -> Optional[Dict[str, Any]]:
+        """Last resort: extract key fields from LLM response using regex.
+
+        Even if JSON is broken, we can often extract the transformed content
+        and other fields from the response text.
+        """
+        # Check if LLM said not transformable
+        not_transformable_patterns = [
+            r'"is_transformable"\s*:\s*false',
+            r"변환\s*(?:이|을)\s*(?:불가|적용.*?어려)",
+            r"not\s+transformable",
+        ]
+        for pat in not_transformable_patterns:
+            if re.search(pat, text, re.IGNORECASE):
+                reason = ""
+                reason_match = re.search(r'"reason_if_not"\s*:\s*"([^"]*)"', text)
+                if reason_match:
+                    reason = reason_match.group(1)
+                return {
+                    "is_transformable": False,
+                    "reason_if_not": reason or "변환 불가",
+                }
+
+        # Try to extract transformed content
+        content_match = re.search(
+            r'"transformed_(?:context|question|content)"\s*:\s*"((?:[^"\\]|\\.)*)"',
+            text,
+            re.DOTALL,
+        )
+        if not content_match:
+            # Try multiline: content between quotes after the key
+            content_match = re.search(
+                r'"transformed_(?:context|question|content)"\s*:\s*"(.+?)"'
+                r"\s*[,}]",
+                text,
+                re.DOTALL,
+            )
+
+        if content_match:
+            content = content_match.group(1)
+            # Extract other fields
+            desc_match = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+            critical_match = re.search(
+                r'"critical_data"\s*:\s*"((?:[^"\\]|\\.)*)"', text
+            )
+
+            return {
+                "is_transformable": True,
+                "transformed_content": content.replace("\\n", "\n").replace('\\"', '"'),
+                "description": desc_match.group(1) if desc_match else "",
+                "critical_data": critical_match.group(1) if critical_match else "",
+                "removed_or_modified": "",
+                "derivable_check": "",
+            }
+
+        return None
 
     async def transform_single(
         self, problem: Dict, transform_type: str
