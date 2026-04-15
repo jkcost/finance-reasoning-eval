@@ -341,7 +341,7 @@ async def run_evaluation(
                 q = t_data.get("question_transformed", question)
             else:
                 ctx = t_data.get("context_transformed", context_original)
-                q = question
+                q = t_data.get("question_transformed", question)
 
             for model_name, provider in providers.items():
                 # Skip already-completed evaluations

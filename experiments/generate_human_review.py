@@ -229,14 +229,16 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
 
             if has_q:
                 panel_content += (
-                    f'<div class="diff-container">'
-                    f'<div class="diff-panel">'
-                    f'<div class="diff-label">원본 Question</div>'
-                    f'<pre class="diff-content">{_esc(question)}</pre></div>'
-                    f'<div class="diff-panel diff-transformed">'
-                    f'<div class="diff-label">변환 후 Question</div>'
-                    f'<pre class="diff-content">{_esc(transformed_q)}</pre>'
-                    f"</div></div>"
+                    f'<div class="q-compare">'
+                    f'<div class="q-col">'
+                    f'<div class="label">원본 Question</div>'
+                    f'<div class="q-text">{_esc(question)}</div>'
+                    f"</div>"
+                    f'<div class="q-col">'
+                    f'<div class="q-text q-changed">{_esc(transformed_q)}</div>'
+                    f'<div class="label">변환 Question</div>'
+                    f"</div>"
+                    f"</div>"
                 )
 
             if has_ctx:
@@ -246,12 +248,6 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                 # Escaped versions for display
                 orig_esc = _esc(context)
                 trans_esc = _esc(transformed_ctx)
-                # Raw for editing
-                trans_raw = (
-                    transformed_ctx.replace("\\", "\\\\")
-                    .replace("`", "\\`")
-                    .replace("$", "\\$")
-                )
 
                 panel_content += (
                     f'<div class="diff-container">'
@@ -260,7 +256,7 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                     f'<pre class="diff-content" id="orig-ctx-{qid}-{ttype}">{orig_esc}</pre></div>'
                     f'<div class="diff-panel diff-transformed">'
                     f'<div class="diff-label">변환 후'
-                    f"<button class=\"edit-btn\" onclick=\"toggleEdit('{qid}', '{ttype}')\">편집</button>"
+                    f"<button class=\"edit-btn\" onclick=\"toggleEdit('{qid}', '{ttype}', this)\">편집</button>"
                     f"</div>"
                     f'<pre class="diff-content" id="view-ctx-{qid}-{ttype}">{trans_esc}</pre>'
                     f'<textarea class="edit-area" id="edit-ctx-{qid}-{ttype}" '
@@ -270,55 +266,123 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                     f"</div></div>"
                 )
 
-            # Model response (if evaluation data available)
-            model_response = tdata.get("model_response", "")
-            if model_response:
-                model_name = tdata.get("model_name", "unknown")
-                response_type = tdata.get("response_type", "")
-                case_type = tdata.get("case_type", 0)
-                is_correct = tdata.get("is_correct", False)
+            # Model responses (3 types: original, transformed+standard, transformed+metacognitive)
+            gt_val = problem.get("ground_truth", "")
+            case_labels = {1: "거부 (C1)", 2: "오답 (C2)", 3: "정답 (C3)"}
+            case_colors = {1: "#22c55e", 2: "#f59e0b", 3: "#ef4444"}
 
-                case_labels = {1: "거부 (C1)", 2: "오답 (C2)", 3: "정답 (C3)"}
-                case_label = case_labels.get(case_type, "?")
-                case_colors = {1: "#22c55e", 2: "#f59e0b", 3: "#ef4444"}
-                case_color = case_colors.get(case_type, "#666")
+            response_configs = [
+                (
+                    "original",
+                    "원본 Context",
+                    tdata.get("original_response", ""),
+                    tdata.get("original_predicted", ""),
+                    tdata.get("original_is_correct", False),
+                    tdata.get("original_case_type", 0),
+                    tdata.get("original_response_type", ""),
+                    tdata.get("original_execution_error", ""),
+                    "#3b82f6",
+                ),
+                (
+                    "transformed",
+                    "변환 Context (Standard)",
+                    tdata.get("model_response", ""),
+                    tdata.get("predicted_answer", ""),
+                    tdata.get("is_correct", False),
+                    tdata.get("case_type", 0),
+                    tdata.get("response_type", ""),
+                    tdata.get("execution_error", ""),
+                    "#f59e0b",
+                ),
+                (
+                    "metacognitive",
+                    "변환 Context (Metacognitive)",
+                    tdata.get("metacognitive_response", ""),
+                    tdata.get("metacognitive_predicted", ""),
+                    tdata.get("metacognitive_is_correct", False),
+                    tdata.get("metacognitive_case_type", 0),
+                    tdata.get("metacognitive_response_type", ""),
+                    tdata.get("metacognitive_execution_error", ""),
+                    "#a78bfa",
+                ),
+            ]
 
-                panel_content += (
-                    f'<div class="model-response-box">'
-                    f'<div class="model-response-header">'
-                    f'<span class="model-name">{_esc(model_name)}</span> '
-                    f'<span class="case-badge" style="background:{case_color}20;color:{case_color};'
-                    f'border:1px solid {case_color};padding:2px 8px;border-radius:4px;font-size:11px;">'
-                    f"{case_label}</span> "
-                    f'<span style="color:var(--text2);font-size:12px;">{_esc(response_type)}</span>'
-                    f"</div>"
-                    f'<pre class="model-response-content">{_esc(model_response[:1500])}</pre>'
-                    f"</div>"
-                )
+            has_any_response = any(cfg[2] for cfg in response_configs)
+            if has_any_response:
+                panel_content += '<div class="responses-grid">'
 
-            # Judgment UI
+                for (
+                    resp_id,
+                    label,
+                    raw_resp,
+                    predicted,
+                    is_correct,
+                    case_type,
+                    resp_type,
+                    exec_err,
+                    accent,
+                ) in response_configs:
+                    if not raw_resp:
+                        panel_content += (
+                            f'<div class="response-card response-empty" style="border-color:{accent}30">'
+                            f'<div class="response-card-header" style="color:{accent}">{label}</div>'
+                            f'<div class="response-card-body">실험 대기</div>'
+                            f"</div>"
+                        )
+                        continue
+
+                    case_label = case_labels.get(case_type, "?")
+                    case_color = case_colors.get(case_type, "#666")
+                    correct_icon = "O" if is_correct else "X"
+                    correct_color = "#22c55e" if is_correct else "#ef4444"
+
+                    error_html = ""
+                    if exec_err:
+                        error_html = f'<div class="result-error">에러: {_esc(str(exec_err)[:80])}</div>'
+
+                    panel_content += (
+                        f'<div class="response-card" style="border-color:{accent}60">'
+                        f'<div class="response-card-header" style="color:{accent}">{label}</div>'
+                        f'<div class="response-card-result">'
+                        f'<span class="case-badge" style="background:{case_color}20;color:{case_color};'
+                        f'border:1px solid {case_color};padding:2px 6px;border-radius:4px;font-size:10px;">'
+                        f"{case_label}</span>"
+                        f'<span class="result-value" style="color:{correct_color};font-size:13px;">'
+                        f"{_esc(str(predicted))} ({correct_icon})</span>"
+                        f'<span class="result-gt" style="font-size:11px;">정답: {_esc(str(gt_val))}</span>'
+                        f"</div>"
+                        f"{error_html}"
+                        f'<details class="model-response-details">'
+                        f"<summary>응답 코드</summary>"
+                        f'<pre class="model-response-content">{_esc(raw_resp[:1200])}</pre>'
+                        f"</details>"
+                        f"</div>"
+                    )
+
+                panel_content += "</div>"
+
+            # Judgment UI — Two-Stage Annotation
             panel_content += f"""
             <div class="judgment-box" id="judgment-{qid}-{ttype}">
-              <div class="judgment-row">
-                <div class="judgment-buttons">
-                  <button class="j-btn j-approve" onclick="setJudgment('{qid}', '{ttype}', 'approved')">승인</button>
-                  <button class="j-btn j-modify" onclick="setJudgment('{qid}', '{ttype}', 'needs_modification')">수정 필요</button>
-                  <button class="j-btn j-reject" onclick="setJudgment('{qid}', '{ttype}', 'rejected')">부적절</button>
+              <div class="stage-box">
+                <div class="stage-label">1단계: 변환 품질</div>
+                <div class="j-buttons">
+                  <button class="j-btn j-approve" onclick="setStage1('{qid}', '{ttype}', 'approved')">승인</button>
+                  <button class="j-btn j-modify" onclick="setStage1('{qid}', '{ttype}', 'needs_modification')">수정필요</button>
+                  <button class="j-btn j-reject" onclick="setStage1('{qid}', '{ttype}', 'rejected')">부적절</button>
                 </div>
-                <div class="judgment-selects">
-                  <select id="unsolvable-{qid}-{ttype}" onchange="saveMeta('{qid}', '{ttype}')">
-                    <option value="">unsolvable?</option>
-                    <option value="yes">예 - 풀 수 없음</option>
-                    <option value="no">아니오 - 여전히 풀 수 있음</option>
-                    <option value="partial">부분적</option>
-                  </select>
-                  <select id="essential-{qid}-{ttype}" onchange="saveMeta('{qid}', '{ttype}')">
-                    <option value="">제거 정보 필수?</option>
-                    <option value="critical">필수</option>
-                    <option value="helpful">보조</option>
-                    <option value="irrelevant">무관</option>
-                  </select>
+              </div>
+              <div class="stage-box stage2" id="stage2-{qid}-{ttype}" style="display:none">
+                <div class="stage-label">2단계: Solvability</div>
+                <div class="j-buttons">
+                  <button class="j-btn j-unsolvable" onclick="setStage2('{qid}', '{ttype}', 'unsolvable')">Unsolvable(통과)</button>
+                  <button class="j-btn j-solvable" onclick="setStage2('{qid}', '{ttype}', 'solvable')">Solvable(답변가능)</button>
+                  <button class="j-btn j-review" onclick="setStage2('{qid}', '{ttype}', 'review_needed')">확인필요</button>
                 </div>
+                <input type="text" class="solvable-reason" id="solvable-reason-{qid}-{ttype}"
+                       placeholder="Solvable 사유 입력..."
+                       style="display:none"
+                       onchange="saveMeta('{qid}', '{ttype}')">
               </div>
               <textarea class="note-area" id="note-{qid}-{ttype}" rows="2"
                         placeholder="판정 이유 / 수정 방향 메모..."
@@ -367,8 +431,8 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
           <div class="section-label">Question</div>
           <div class="question-text">{_esc(question)}</div>
         </div>
+        <div class="gt-display">정답 (Ground Truth): <strong>{_esc(str(ground_truth))}</strong></div>
         <div class="meta-row">
-          <span><strong>Ground Truth:</strong> {_esc(str(ground_truth))}</span>
           <span><strong>Format:</strong> {ctx_format}</span>
         </div>
         <details class="collapsible">
@@ -549,18 +613,26 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .edit-btn.editing {{ background: var(--amber); color: black; }}
 .edit-area {{ width: 100%; min-height: 200px; max-height: 400px; background: var(--bg); border: 2px solid var(--amber); border-radius: 6px; color: var(--text); padding: 10px; font-size: 11px; font-family: monospace; white-space: pre-wrap; resize: vertical; }}
 
-/* Model Response */
-.model-response-box {{ margin-top: 10px; padding: 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; }}
-.model-response-header {{ display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }}
-.model-name {{ font-weight: 600; font-size: 12px; color: var(--blue); }}
-.model-response-content {{ font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; color: #c9d1d9; line-height: 1.4; }}
+/* Model Responses — 3-column grid */
+.responses-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }}
+.response-card {{ background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px; border-top: 3px solid; }}
+.response-card-header {{ font-size: 11px; font-weight: 700; margin-bottom: 6px; }}
+.response-card-result {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }}
+.response-card-body {{ font-size: 12px; color: var(--text2); padding: 8px; text-align: center; }}
+.response-empty {{ opacity: 0.4; }}
+.model-response-content {{ font-size: 11px; white-space: pre-wrap; word-break: break-word; max-height: 250px; overflow-y: auto; color: #c9d1d9; line-height: 1.4; }}
+.result-value {{ font-weight: 700; font-family: monospace; }}
+.result-gt {{ font-weight: 600; color: var(--blue); font-family: monospace; font-size: 11px; }}
+.result-error {{ color: #f97583; font-size: 10px; margin-top: 4px; }}
+.model-response-details {{ margin-top: 6px; }}
+.model-response-details summary {{ font-size: 10px; color: var(--text2); cursor: pointer; }}
+@media (max-width: 1200px) {{ .responses-grid {{ grid-template-columns: 1fr; }} }}
 
-/* Judgment */
+/* Judgment — Two-Stage */
 .judgment-box {{ margin-top: 10px; padding: 10px; background: var(--surface2); border-radius: 8px; border: 1px solid var(--border); }}
-.judgment-row {{ display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }}
-.judgment-buttons {{ display: flex; gap: 4px; }}
-.judgment-selects {{ display: flex; gap: 4px; }}
-.judgment-selects select {{ background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 4px 6px; font-size: 11px; }}
+.stage-box {{ margin-bottom: 8px; }}
+.stage-label {{ font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 4px; }}
+.j-buttons {{ display: flex; gap: 4px; }}
 .j-btn {{ padding: 5px 14px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; font-size: 12px; font-weight: 500; }}
 .j-approve {{ background: #052e16; color: var(--green); border-color: #14532d; }}
 .j-approve:hover, .j-approve.selected {{ background: var(--green); color: white; }}
@@ -568,8 +640,27 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .j-modify:hover, .j-modify.selected {{ background: var(--amber); color: black; }}
 .j-reject {{ background: #1a0505; color: var(--red); border-color: #7f1d1d; }}
 .j-reject:hover, .j-reject.selected {{ background: var(--red); color: white; }}
+.j-unsolvable {{ background: #052e16; color: var(--green); border-color: #14532d; }}
+.j-unsolvable:hover, .j-unsolvable.selected {{ background: var(--green); color: white; }}
+.j-solvable {{ background: #422006; color: var(--amber); border-color: #713f12; }}
+.j-solvable:hover, .j-solvable.selected {{ background: var(--amber); color: black; }}
+.j-review {{ background: #1e1e3d; color: var(--purple); border-color: #3b3070; }}
+.j-review:hover, .j-review.selected {{ background: var(--purple); color: white; }}
+.stage2 {{ border-top: 1px solid var(--border); padding-top: 8px; }}
+.solvable-reason {{ width: 100%; margin-top: 6px; background: var(--bg); border: 1px solid var(--amber); border-radius: 6px; color: var(--text); padding: 6px; font-size: 12px; }}
 .note-area {{ width: 100%; margin-top: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px; font-size: 12px; resize: vertical; }}
 .judgment-status {{ margin-top: 4px; font-size: 11px; }}
+
+/* Ground Truth display */
+.gt-display {{ background: #1a2332; border: 1px solid var(--blue); border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; color: var(--blue); }}
+.gt-display strong {{ color: #60a5fa; font-size: 15px; }}
+
+/* Question comparison */
+.q-compare {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; margin-bottom: 6px; }}
+.q-col {{ background: var(--surface2); border-radius: 6px; padding: 10px; }}
+.q-col .label {{ font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 4px; }}
+.q-text {{ font-size: 13px; white-space: pre-wrap; word-break: break-word; }}
+.q-changed {{ color: var(--amber); border-left: 3px solid var(--amber); padding-left: 8px; }}
 
 /* Review status on header */
 .review-status {{ font-size: 10px; padding: 1px 5px; border-radius: 4px; }}
@@ -592,6 +683,13 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .guide-card p {{ font-size: 12px; color: var(--text2); margin-bottom: 4px; }}
 .guide-card .guide-tag {{ display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-right: 4px; }}
 .guide-card .example {{ font-size: 11px; background: var(--bg); padding: 6px 8px; border-radius: 4px; margin-top: 6px; font-family: monospace; white-space: pre-wrap; }}
+.prompt-comparison {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }}
+.prompt-card {{ background: var(--surface2); border-radius: 8px; padding: 12px; border-top: 3px solid; }}
+.prompt-card h4 {{ font-size: 12px; margin-bottom: 6px; }}
+.prompt-desc {{ font-size: 11px; color: var(--text2); margin-bottom: 8px; line-height: 1.5; }}
+.prompt-details summary {{ font-size: 11px; color: var(--text2); cursor: pointer; }}
+.prompt-pre {{ font-size: 10px; background: var(--bg); padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; color: #c9d1d9; margin-top: 4px; line-height: 1.4; }}
+@media (max-width: 1200px) {{ .prompt-comparison {{ grid-template-columns: 1fr; }} }}
 .guide-section {{ margin-top: 14px; }}
 .guide-section h3 {{ font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text2); }}
 .guide-section table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
@@ -600,6 +698,7 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 
 @media (max-width: 768px) {{
   .diff-container {{ grid-template-columns: 1fr; }}
+  .q-compare {{ grid-template-columns: 1fr; }}
   .summary-grid {{ grid-template-columns: repeat(3, 1fr); }}
   .guide-grid {{ grid-template-columns: 1fr; }}
 }}
@@ -792,6 +891,70 @@ h1 {{ font-size: 22px; font-weight: 600; }}
         </p>
       </div>
 
+      <div class="guide-section">
+        <h3>프롬프트 전략 비교 (3개 응답)</h3>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+          각 변환 탭에 3개 LLM 응답이 나란히 표시됩니다. 모델(gpt-4o-mini)에 동일한 POT(Program of Thought) 방식으로 코드 생성을 요청하되,
+          시스템 프롬프트만 달리하여 모델 행동의 차이를 관찰합니다.
+        </p>
+        <div class="prompt-comparison">
+          <div class="prompt-card" style="border-color:#3b82f6;">
+            <h4 style="color:#3b82f6;">1. 원본 Context (Baseline)</h4>
+            <p class="prompt-desc">원본 question + 원본 context를 Standard 프롬프트로 평가. 모델이 완전한 정보로 정답을 맞추는지 확인 (기준선).</p>
+            <details class="prompt-details">
+              <summary>System Prompt 전문 보기</summary>
+              <pre class="prompt-pre">You are a financial expert, you are supposed to generate a Python program to answer the given question. The returned value of the program is supposed to be the answer. Here is an example of the Python program:
+```python
+def solution():
+    # Define variables name and value
+    revenue = 600000
+    avg_account_receivable = 50000
+
+    # Do math calculation to get the answer
+    receivables_turnover = revenue / avg_account_receivable
+    answer = 365 / receivables_turnover
+
+    # return answer
+    return answer
+```</pre>
+            </details>
+          </div>
+
+          <div class="prompt-card" style="border-color:#f59e0b;">
+            <h4 style="color:#f59e0b;">2. 변환 Context + Standard</h4>
+            <p class="prompt-desc">변환된 question/context를 Standard 프롬프트로 평가. 거부 옵션 없이 모델이 어떻게 반응하는지 (강제 풀이).</p>
+            <details class="prompt-details">
+              <summary>System Prompt 전문 보기</summary>
+              <pre class="prompt-pre">(위와 동일한 Standard 프롬프트 — 거부 옵션 없음)</pre>
+            </details>
+          </div>
+
+          <div class="prompt-card" style="border-color:#a78bfa;">
+            <h4 style="color:#a78bfa;">3. 변환 Context + Metacognitive</h4>
+            <p class="prompt-desc">변환된 question/context + 거부 옵션이 있는 프롬프트. 모델이 정보 부족/충돌을 인식하고 거부할 수 있는지 (메타인지 핵심 테스트).</p>
+            <details class="prompt-details">
+              <summary>System Prompt 전문 보기</summary>
+              <pre class="prompt-pre">You are a financial expert, you are supposed to generate a Python program to answer the given question.
+
+IMPORTANT: Before writing code, verify that ALL required data is present in the context.
+If any critical information is missing, contradictory, or ambiguous, generate:
+```python
+def solution():
+    # INSUFFICIENT_INFORMATION: [explain what data is missing]
+    return "INSUFFICIENT_INFORMATION"
+```
+Do NOT guess, assume, or fabricate missing values.
+
+If the data is sufficient, generate the solution program normally.</pre>
+            </details>
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--text2);margin-top:8px;">
+          <strong>공통 User Prompt:</strong> "The following question context is provided for your reference.
+          [context] Question: [question] Please generate a Python program... def solution(): ..."
+        </p>
+      </div>
+
     </div>
   </div>
 
@@ -819,9 +982,11 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 <div class="kb-hint">
   <kbd>J</kbd> 다음 문제 &nbsp;
   <kbd>K</kbd> 이전 문제 &nbsp;
-  <kbd>1</kbd>~<kbd>5</kbd> 탭 전환 &nbsp;
+  <kbd>1</kbd>~<kbd>8</kbd> 탭 전환 &nbsp;
   <kbd>A</kbd> 승인 &nbsp;
-  <kbd>R</kbd> 부적절
+  <kbd>R</kbd> 부적절 &nbsp;
+  <kbd>U</kbd> Unsolvable &nbsp;
+  <kbd>S</kbd> Solvable
 </div>
 
 <script>
@@ -910,18 +1075,23 @@ function setAssignee() {{
 function applyAnnotations() {{
   for (const [qid, types] of Object.entries(annotations)) {{
     for (const [ttype, data] of Object.entries(types)) {{
-      if (data.judgment) highlightJudgment(qid, ttype, data.judgment);
+      if (data.judgment) {{
+        highlightStage1(qid, ttype, data.judgment);
+        if (data.judgment === 'approved') {{
+          const s2 = document.getElementById(`stage2-${{qid}}-${{ttype}}`);
+          if (s2) s2.style.display = 'block';
+        }}
+      }}
+      if (data.solvability) {{
+        highlightStage2(qid, ttype, data.solvability);
+        if (data.solvability === 'solvable') {{
+          const reason = document.getElementById(`solvable-reason-${{qid}}-${{ttype}}`);
+          if (reason) {{ reason.style.display = 'block'; reason.value = data.solvable_reason || ''; }}
+        }}
+      }}
       if (data.note) {{
         const el = document.getElementById(`note-${{qid}}-${{ttype}}`);
         if (el) el.value = data.note;
-      }}
-      if (data.unsolvable) {{
-        const el = document.getElementById(`unsolvable-${{qid}}-${{ttype}}`);
-        if (el) el.value = data.unsolvable;
-      }}
-      if (data.essential) {{
-        const el = document.getElementById(`essential-${{qid}}-${{ttype}}`);
-        if (el) el.value = data.essential;
       }}
       if (data.edited_context) {{
         const el = document.getElementById(`edit-ctx-${{qid}}-${{ttype}}`);
@@ -932,49 +1102,99 @@ function applyAnnotations() {{
   }}
 }}
 
-// ===== Judgment =====
-function setJudgment(qid, ttype, judgment) {{
+// ===== Two-Stage Judgment =====
+function setStage1(qid, ttype, judgment) {{
   if (!annotations[qid]) annotations[qid] = {{}};
   if (!annotations[qid][ttype]) annotations[qid][ttype] = {{}};
   annotations[qid][ttype].judgment = judgment;
   annotations[qid][ttype].assignee = currentAssignee;
   annotations[qid][ttype].timestamp = new Date().toISOString();
-  highlightJudgment(qid, ttype, judgment);
+  // Clear stage 2 when stage 1 changes
+  delete annotations[qid][ttype].solvability;
+  delete annotations[qid][ttype].solvable_reason;
+  highlightStage1(qid, ttype, judgment);
+  // Show/hide stage 2
+  const s2 = document.getElementById(`stage2-${{qid}}-${{ttype}}`);
+  if (s2) {{
+    s2.style.display = judgment === 'approved' ? 'block' : 'none';
+    // Reset stage 2 highlight
+    s2.querySelectorAll('.j-btn').forEach(b => b.classList.remove('selected'));
+    const reason = document.getElementById(`solvable-reason-${{qid}}-${{ttype}}`);
+    if (reason) {{ reason.style.display = 'none'; reason.value = ''; }}
+  }}
   saveAnnotations();
   updateCardStatus(qid);
 }}
 
-function highlightJudgment(qid, ttype, judgment) {{
+function setStage2(qid, ttype, solvability) {{
+  // Guard: Stage 1 must be approved before Stage 2
+  const ann = annotations[qid]?.[ttype];
+  if (!ann || ann.judgment !== 'approved') return;
+  if (!annotations[qid]) annotations[qid] = {{}};
+  if (!annotations[qid][ttype]) annotations[qid][ttype] = {{}};
+  annotations[qid][ttype].solvability = solvability;
+  annotations[qid][ttype].timestamp = new Date().toISOString();
+  highlightStage2(qid, ttype, solvability);
+  // Show reason input only for solvable
+  const reason = document.getElementById(`solvable-reason-${{qid}}-${{ttype}}`);
+  if (reason) {{
+    reason.style.display = solvability === 'solvable' ? 'block' : 'none';
+    if (solvability !== 'solvable') reason.value = '';
+  }}
+  saveAnnotations();
+  updateCardStatus(qid);
+}}
+
+function highlightStage1(qid, ttype, judgment) {{
   const box = document.getElementById(`judgment-${{qid}}-${{ttype}}`);
   if (!box) return;
-  box.querySelectorAll('.j-btn').forEach(b => b.classList.remove('selected'));
+  const stage1 = box.querySelector('.stage-box:first-child');
+  if (!stage1) return;
+  stage1.querySelectorAll('.j-btn').forEach(b => b.classList.remove('selected'));
   const map = {{'approved':'j-approve','needs_modification':'j-modify','rejected':'j-reject'}};
   const cls = map[judgment];
-  if (cls) box.querySelector(`.${{cls}}`)?.classList.add('selected');
+  if (cls) stage1.querySelector(`.${{cls}}`)?.classList.add('selected');
 
   const status = document.getElementById(`status-${{qid}}-${{ttype}}`);
   const labels = {{'approved':'승인','needs_modification':'수정 필요','rejected':'부적절'}};
   const colors = {{'approved':'var(--green)','needs_modification':'var(--amber)','rejected':'var(--red)'}};
-  if (status) status.innerHTML = `<span style="color:${{colors[judgment]}}">${{labels[judgment]}}</span>`;
+  let statusText = `<span style="color:${{colors[judgment]}}">${{labels[judgment]}}</span>`;
+  const ann = annotations[qid]?.[ttype];
+  if (ann && ann.solvability) {{
+    const s2labels = {{'unsolvable':'Unsolvable','solvable':'Solvable','review_needed':'확인필요'}};
+    const s2colors = {{'unsolvable':'var(--green)','solvable':'var(--amber)','review_needed':'var(--purple)'}};
+    statusText += ` → <span style="color:${{s2colors[ann.solvability]}}">${{s2labels[ann.solvability]}}</span>`;
+  }}
+  if (status) status.innerHTML = statusText;
+}}
+
+function highlightStage2(qid, ttype, solvability) {{
+  const s2 = document.getElementById(`stage2-${{qid}}-${{ttype}}`);
+  if (!s2) return;
+  s2.querySelectorAll('.j-btn').forEach(b => b.classList.remove('selected'));
+  const map = {{'unsolvable':'j-unsolvable','solvable':'j-solvable','review_needed':'j-review'}};
+  const cls = map[solvability];
+  if (cls) s2.querySelector(`.${{cls}}`)?.classList.add('selected');
+  // Update combined status display
+  const ann = annotations[qid]?.[ttype];
+  if (ann && ann.judgment) highlightStage1(qid, ttype, ann.judgment);
 }}
 
 function saveMeta(qid, ttype) {{
   if (!annotations[qid]) annotations[qid] = {{}};
   if (!annotations[qid][ttype]) annotations[qid][ttype] = {{}};
   const note = document.getElementById(`note-${{qid}}-${{ttype}}`);
-  const unsolvable = document.getElementById(`unsolvable-${{qid}}-${{ttype}}`);
-  const essential = document.getElementById(`essential-${{qid}}-${{ttype}}`);
+  const solvableReason = document.getElementById(`solvable-reason-${{qid}}-${{ttype}}`);
   if (note) annotations[qid][ttype].note = note.value;
-  if (unsolvable) annotations[qid][ttype].unsolvable = unsolvable.value;
-  if (essential) annotations[qid][ttype].essential = essential.value;
+  if (solvableReason && solvableReason.style.display !== 'none') annotations[qid][ttype].solvable_reason = solvableReason.value;
   saveAnnotations();
 }}
 
 // ===== Edit =====
-function toggleEdit(qid, ttype) {{
+function toggleEdit(qid, ttype, btn) {{
   const view = document.getElementById(`view-ctx-${{qid}}-${{ttype}}`);
   const edit = document.getElementById(`edit-ctx-${{qid}}-${{ttype}}`);
-  const btn = event.target;
+  if (!btn) btn = event.target;
   if (!view || !edit) return;
 
   const isEditing = edit.style.display !== 'none';
@@ -1228,10 +1448,10 @@ document.addEventListener('keydown', function(e) {{
   switch(e.key.toLowerCase()) {{
     case 'j': navigateCard(1); break;
     case 'k': navigateCard(-1); break;
-    case '1': case '2': case '3': case '4': case '5': {{
+    case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': {{
       const tabIdx = parseInt(e.key) - 1;
-      const types = ['EA-partial', 'EA-full', 'SA', 'IC', 'TA'];
-      if (currentCardIdx >= 0 && currentCardIdx < cards.length) {{
+      const types = ['EA-partial', 'EA-full', 'SA', 'IC-L1', 'IC-L2', 'IC-L3', 'IC-L4', 'TA'];
+      if (tabIdx < types.length && currentCardIdx >= 0 && currentCardIdx < cards.length) {{
         const qid = cards[currentCardIdx].dataset.qid;
         showTab(qid, types[tabIdx]);
       }}
@@ -1243,7 +1463,7 @@ document.addEventListener('keydown', function(e) {{
         const activeTab = cards[currentCardIdx].querySelector('.tab-btn.active');
         if (activeTab) {{
           const ttype = activeTab.id.replace(`tab-${{qid}}-`, '');
-          setJudgment(qid, ttype, 'approved');
+          setStage1(qid, ttype, 'approved');
         }}
       }}
       break;
@@ -1254,7 +1474,29 @@ document.addEventListener('keydown', function(e) {{
         const activeTab = cards[currentCardIdx].querySelector('.tab-btn.active');
         if (activeTab) {{
           const ttype = activeTab.id.replace(`tab-${{qid}}-`, '');
-          setJudgment(qid, ttype, 'rejected');
+          setStage1(qid, ttype, 'rejected');
+        }}
+      }}
+      break;
+    }}
+    case 'u': {{
+      if (currentCardIdx >= 0 && currentCardIdx < cards.length) {{
+        const qid = cards[currentCardIdx].dataset.qid;
+        const activeTab = cards[currentCardIdx].querySelector('.tab-btn.active');
+        if (activeTab) {{
+          const ttype = activeTab.id.replace(`tab-${{qid}}-`, '');
+          setStage2(qid, ttype, 'unsolvable');
+        }}
+      }}
+      break;
+    }}
+    case 's': {{
+      if (currentCardIdx >= 0 && currentCardIdx < cards.length) {{
+        const qid = cards[currentCardIdx].dataset.qid;
+        const activeTab = cards[currentCardIdx].querySelector('.tab-btn.active');
+        if (activeTab) {{
+          const ttype = activeTab.id.replace(`tab-${{qid}}-`, '');
+          setStage2(qid, ttype, 'solvable');
         }}
       }}
       break;
@@ -1335,33 +1577,87 @@ def main():
         else:
             logger.warning(f"Annotations 파일 없음: {ann_path} (빈 상태로 생성)")
 
-    # Load evaluation results if provided
+    # Load evaluation results (auto-detect if not specified)
     eval_map = {}  # {(question_id, transformation_type): eval_result}
+    eval_path = None
     if args.eval:
         eval_path = results_dir / args.eval
-        if eval_path.exists():
-            with open(eval_path, "r", encoding="utf-8") as f:
-                eval_data = json.load(f)
-            for r in eval_data.get("results", []):
-                key = (r.get("question_id", ""), r.get("transformation_type", ""))
-                eval_map[key] = r
-            logger.info(f"Evaluation 로드: {eval_path} ({len(eval_map)}건)")
+    else:
+        # Auto-detect largest batch_evaluation file
+        candidates = sorted(
+            results_dir.glob("batch_evaluation_*.json"),
+            key=lambda p: p.stat().st_size,
+            reverse=True,
+        )
+        if candidates:
+            eval_path = candidates[0]
+            logger.info(f"Evaluation 자동 감지: {eval_path.name}")
 
-            # Inject eval results into problem transformations
+    if eval_path and eval_path.exists():
+        with open(eval_path, "r", encoding="utf-8") as f:
+            eval_data = json.load(f)
+        for r in eval_data.get("results", []):
+            key = (r.get("question_id", ""), r.get("transformation_type", ""))
+            eval_map[key] = r
+        logger.info(f"Evaluation 로드: {eval_path} ({len(eval_map)}건)")
+
+        # Inject eval results into problem transformations
+        for problem in data["problems"]:
+            qid = problem.get("question_id", "")
+            for ttype, tdata in problem.get("transformations", {}).items():
+                if not tdata.get("success"):
+                    continue
+                eval_result = eval_map.get((qid, ttype))
+                if eval_result:
+                    tdata["model_response"] = eval_result.get("raw_response", "")
+                    tdata["model_name"] = eval_result.get("model", "")
+                    tdata["response_type"] = eval_result.get("response_type", "")
+                    tdata["is_correct"] = eval_result.get("is_correct", False)
+                    tdata["case_type"] = eval_result.get("case_type", 0)
+                    tdata["predicted_answer"] = eval_result.get("predicted_answer", "")
+                    tdata["execution_error"] = eval_result.get("execution_error", "")
+    elif eval_path:
+        logger.warning(f"Evaluation 파일 없음: {eval_path}")
+
+    # Load additional eval results (original context + metacognitive)
+    for eval_name, field_prefix in [
+        ("eval_original_context.json", "original"),
+        ("eval_metacognitive.json", "metacognitive"),
+    ]:
+        extra_path = results_dir / eval_name
+        if extra_path.exists():
+            with open(extra_path, "r", encoding="utf-8") as f:
+                extra_data = json.load(f)
+            extra_map = {}
+            for r in extra_data.get("results", []):
+                key = (r.get("question_id", ""), r.get("transformation_type", ""))
+                extra_map[key] = r
+
+            injected = 0
             for problem in data["problems"]:
                 qid = problem.get("question_id", "")
                 for ttype, tdata in problem.get("transformations", {}).items():
                     if not tdata.get("success"):
                         continue
-                    eval_result = eval_map.get((qid, ttype))
-                    if eval_result:
-                        tdata["model_response"] = eval_result.get("raw_response", "")
-                        tdata["model_name"] = eval_result.get("model", "")
-                        tdata["response_type"] = eval_result.get("response_type", "")
-                        tdata["is_correct"] = eval_result.get("is_correct", False)
-                        tdata["case_type"] = eval_result.get("case_type", 0)
-        else:
-            logger.warning(f"Evaluation 파일 없음: {eval_path}")
+                    er = extra_map.get((qid, ttype))
+                    if er:
+                        tdata[f"{field_prefix}_response"] = er.get("raw_response", "")
+                        tdata[f"{field_prefix}_predicted"] = er.get(
+                            "predicted_answer", ""
+                        )
+                        tdata[f"{field_prefix}_is_correct"] = er.get(
+                            "is_correct", False
+                        )
+                        tdata[f"{field_prefix}_response_type"] = er.get(
+                            "response_type", ""
+                        )
+                        tdata[f"{field_prefix}_case_type"] = er.get("case_type", 0)
+                        tdata[f"{field_prefix}_execution_error"] = er.get(
+                            "execution_error", ""
+                        )
+                        injected += 1
+
+            logger.info(f"추가 Eval 로드: {eval_name} ({injected}건)")
 
     html_content = generate_html(data, preloaded_annotations=preloaded)
 

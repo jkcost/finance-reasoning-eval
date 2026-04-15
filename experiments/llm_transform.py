@@ -68,29 +68,34 @@ TRANSFORM_SPECS = {
     },
     "IC-L2": {
         "name": "IC Level 2: Unit Mismatch",
-        "instruction": """같은 데이터를 다른 단위로 표현하되, 의도적으로 1.5배 오류를 포함하세요.
-- 예: "$500 million" 옆에 "별도 보고서에 따르면 0.75 billion" 삽입 (올바르면 0.5 billion)
-- 단위 쌍: million↔billion, thousand↔million, %↔basis points
-- 핵심: 단위 변환을 직접 해봐야 오류를 발견할 수 있어야 합니다.
-- 풀이에 사용되는 값만 대상으로 합니다.""",
+        "instruction": """Insert the same data expressed in a different unit WITH an intentional error multiplier.
+- Pick a random multiplier from: [1.5, 2, 3, 5, 10, 0.5, 0.1, 100, 0.01, 1000]
+- Example: "$500 million" → add "(equivalent to 0.75 billion per quarterly filing)" where correct would be 0.5 billion
+- Unit pairs: million↔billion, thousand↔million, %↔basis points, per share↔total
+- The conflicting value MUST be in the SAME LANGUAGE as the original context (English context → English annotation).
+- NEVER use Korean or any non-English text in English contexts.
+- The reader should need to manually verify the unit conversion to detect the error.
+- Only target values used in the solution.""",
     },
     "IC-L3": {
         "name": "IC Level 3: Authority Conflict",
-        "instruction": """풀이에 사용되는 핵심 값에 모순되는 데이터를 권위 있는 출처와 함께 삽입하세요.
-- 원래 값과 다른 값(1.3~1.7배)을 같은 문맥 내에 추가합니다.
-- 모순이 도메인적으로 현실적이어야 합니다 (예: "수정된 감사 보고서", "분기별 보고서와 연간 보고서의 차이")
-- 어느 값이 맞는지 판단할 수 없는 상황을 만들어야 합니다.
-- 단순히 숫자만 바꾸지 말고, 왜 두 값이 존재하는지 맥락을 제공하세요.
-- 모순 대상은 반드시 풀이에 사용되는 값이어야 합니다.""",
+        "instruction": """Insert contradictory data for a critical solution value, attributed to an authoritative source.
+- Add a different value (1.3~1.7x multiplier) from an authoritative source within the same context.
+- The contradiction must be domain-realistic (e.g., "revised audit report", "quarterly vs annual report discrepancy").
+- Create ambiguity where neither value can be definitively chosen as correct.
+- Provide context for WHY two values exist, not just change a number.
+- NEVER use Korean or non-English text in English contexts.
+- Only target values used in the solution.""",
     },
     "IC-L4": {
         "name": "IC Level 4: Cross-Period Conflict",
-        "instruction": """시계열 데이터의 내부 합산 일관성을 깨뜨리세요.
-- 예: Q1+Q2+Q3+Q4의 합이 연간 총계와 다르게 만들기
-- 또는: 개별 항목의 합이 보고된 총합과 일치하지 않게 만들기
-- 기존 숫자를 하나 수정하거나, 불일치하는 총계 문장을 삽입합니다.
-- 문제를 풀기 위해 합산/비교가 필요한 값을 대상으로 합니다.
-- 시계열 또는 항목별 데이터가 없으면 변환 불가로 표시하세요.""",
+        "instruction": """Break internal summation consistency in time-series data.
+- Example: Q1+Q2+Q3+Q4 sum does not equal the annual total.
+- Or: individual line items do not sum to the reported subtotal.
+- Modify one existing number or insert a contradictory total statement.
+- Target values that require summation/comparison to solve the problem.
+- NEVER use Korean or non-English text in English contexts.
+- If no time-series or itemized data exists, mark as not applicable.""",
     },
     "TA": {
         "name": "Temporal Ambiguity",

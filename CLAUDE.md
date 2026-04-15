@@ -291,17 +291,82 @@ python -m pytest tests/ -v
 - 작업자 분배: URL 파라미터 `?assignee=이름&start=N&end=M`
 - annotation 저장: `experiments/results/metacognitive/annotations/`
 
-## 다음 단계 (TODO)
+## 제출 전략 (2026-04-15 결정)
 
-1. Human Review 진행 중 — 238문제 × 8타입 변환 품질 검증 (4명 분배)
-2. Human Review 완료 후 → balanced 모델셋 실험 (GPT-4o, Claude Sonnet, Gemini Pro)
-3. Mitigation 실험 — ic_fewshot, ic_crosscheck 전략 효과 검증
-4. Human Baseline Study — 금융 전문가 5-10명 비교
-5. 논문 초고 작성 (Methodology, Related Work 먼저)
+**Primary target: CIKM 2026 Short (4p, 마감 2026-06-06, AoE, Rome 11/7~11/11)**
+**Follow-up target: AAAI 2027 (7p, 마감 2026-08-01 / abstract 7/25, Montréal 2027-02)**
 
-후속 연구 (TODOS.md 참조):
+### CIKM Short RQ 3축 (확장)
+
+| RQ | 내용 | 산출물 |
+|----|------|--------|
+| **RQ-A (핵심 finding)** | FinanceReasoning에서 LLM의 absence vs conflict 비대칭성 및 IC L1-L4 gradient | Phase A/B balanced 결과 + MC Score 표 + L1-L4 gradient figure |
+| **RQ-B (POT Faithfulness 정량)** | POT 응답의 숫자가 변환된 context에서 왔는가, 원본 회상인가? Value Provenance Classifier + Memorization Score 도입 | `value_provenance_classifier.py` + 모델별 Memorization Score 표 |
+| **RQ-C (Conflict Salience Regression)** | IC 탐지 성공/실패를 예측하는 feature(token_distance, authority_marker, magnitude_ratio, same_paragraph)는 무엇인가? | `conflict_salience_scorer.py` 확장 + logistic regression AUC + feature coefficient 표 |
+
+### AAAI 2027 확장 축 (CIKM 이후 8주)
+
+- **RQ-D (Cross-dataset 일반화)**: FinQA(또는 TAT-QA)에 taxonomy 이식 → "단일 도메인" 리뷰어 반박
+- **RQ-E (Human Baseline)**: 금융 전문가 5~10명 IC-L3 detection 측정 → "사람은 할 수 있다" 증명
+- **Error Pattern Taxonomy**: 실패 mode 세분화 (무시/암묵채택/인지후진행)
+
+## 남은 52일 주차별 계획 (CIKM Short)
+
+| 주차 | 기간 | 핵심 작업 |
+|------|------|----------|
+| W1 | 4/15~4/21 | Human Review 마무리(4명) + balanced 실험 kickoff + Value Provenance Classifier 설계 |
+| W2 | 4/22~4/28 | Balanced 3모델 × 6 전략 실험 실행 (GPT-4o, Claude Sonnet, Gemini Pro) |
+| W3 | 4/29~5/5 | POT faithfulness analysis + Memorization Score 계산 (RQ-B) |
+| W4 | 5/6~5/12 | Conflict Salience Regression 구현 + fitting (RQ-C) + draft 시작 |
+| W5 | 5/13~5/19 | Results 섹션 + figures |
+| W6 | 5/20~5/26 | Related Work + Discussion + Methodology 마무리 |
+| W7 | 5/27~6/2 | Co-author review + 교정 |
+| W8 | 6/3~6/6 | 최종 submit |
+
+## 논문 framing (Short 4p)
+
+**제목 후보**: *"LLMs Detect Missing Data But Not Contradictions: A Metacognitive Evaluation in Financial Reasoning"*
+
+**구조**:
+- Introduction (0.5p) — EA vs IC 비대칭 선언
+- Methodology (1p) — Transformation taxonomy + MC Score + Value Provenance Classifier + Salience features
+- Experiments (1p) — Phase A/B 결과표 + IC L1-L4 gradient
+- Analysis (1p) — POT faithfulness (RQ-B) + Salience regression (RQ-C) + Mitigation
+- Conclusion/Limitation (0.5p)
+
+## 정정된 레퍼런스 (Paper Verification 2026-04-15)
+
+할루시네이션 0건 확인. 인용 시 다음 정정 적용:
+- Yang+2024 "Honesty Score" → 정확 제목 *"Alignment for Honesty"*, arXiv:2312.07000
+- Cheng+2024 "Balanced IDK" → 원제 *"Can AI Assistants Know What They Don't Know?"*, ICML 2024, arXiv:2401.13275
+- CoT Faithfulness via Unlearning (arXiv:2502.14829) → **EMNLP 2025** Outstanding (ACL 아님)
+- Memorization in APR 수치(81.8%/88.2%) → **FSE 2025 자매논문** *"Demystifying Memorization..."*에서 나옴
+- ReliabilityBench (arXiv:2601.06112) → **금융 벤치마크 아님** (일반 agent reliability), 인용 제외
+- CNFinBench (arXiv:2512.09506) → 부제. 본제 *"Beyond Knowledge to Agency..."*
+- Lopez-Lira "S&P 500 <1% 회상" 주장 → 구체 출처 미확정, 인용 전 재확인
+
+핵심 경쟁 논문 (정면 positioning 필요):
+- **AbstentionBench** (Kirichenko et al., arXiv:2506.09038, 2025) — Meta FAIR, abstention 20 dataset. 일반 도메인/conflict 미커버
+- **ConflictBank** (Su et al., NeurIPS 2024, arXiv:2408.12076) — RAG 검색 충돌 중심, intra-context 수치 충돌 약함
+- **MAGIC** (Findings EMNLP 2025, aclanthology.org/2025.findings-emnlp.466) — multi-hop inter-context conflict gradient (수치 ladder 없음)
+
+## 후속 연구 (TODOS.md 참조)
 - Cross-Domain Validation (법률/의료)
 - Attention Pattern Analysis (GPU 확보 시)
+
+## 프로젝트 Memory (Git 동기화)
+
+프로젝트 맥락·의사결정·과거 작업 이력은 `docs/memory/` 에 git-tracked 상태로 보관한다.
+기기 간 동기화는 `git pull` 만으로 완료.
+
+- `docs/memory/MEMORY.md` — 인덱스 (항상 먼저 확인)
+- `docs/memory/project_submission_strategy.md` — CIKM 2026 Short → AAAI 2027 제출 전략
+- `docs/memory/project_pot_faithfulness_rqb.md` — RQ-B (POT Faithfulness 정량 도구)
+- `docs/memory/project_conflict_salience_rqc.md` — RQ-C (Conflict Salience Regression)
+- `docs/memory/feedback_llm_based_transformation.md` — 변환은 반드시 LLM 기반
+- `docs/memory/project_rule_based_v1_archive.md` — 규칙 기반 v1 아카이브
+
+**Auto-memory 동기화**: Claude Code는 `~/.claude/projects/.../memory/`에 auto-save 하므로 세션 종료 시 `cp ~/.claude/projects/C--Users-fanding-PycharmProjects-finance-LLM/memory/*.md docs/memory/` 로 동기화 후 커밋. Mac 경로는 `/Users/{name}/.claude/projects/-Users-{name}-Projects-finance_LLM/memory/` 와 유사.
 
 ## 관련 논문 리뷰
 

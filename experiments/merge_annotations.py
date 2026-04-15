@@ -41,11 +41,21 @@ def load_annotation_file(path: Path) -> Dict[str, Any]:
         data = json.load(f)
 
     if "annotations" in data:
-        assignee = data.get("assignee", path.stem)
+        assignee = data.get("assignee") or _extract_name_from_filename(path)
         return {"assignee": assignee, "annotations": data["annotations"]}
 
     # Raw format — infer assignee from filename
-    return {"assignee": path.stem, "annotations": data}
+    return {"assignee": _extract_name_from_filename(path), "annotations": data}
+
+
+def _extract_name_from_filename(path: Path) -> str:
+    """Extract reviewer name from filename like review_김진수_0_238_2026-04-14.json."""
+    stem = path.stem
+    if stem.startswith("review_"):
+        parts = stem.split("_")
+        if len(parts) >= 2 and parts[1]:
+            return parts[1]
+    return stem
 
 
 def merge_annotations(
@@ -75,13 +85,17 @@ def merge_annotations(
                 for t in types.values()
                 if isinstance(t, dict) and t.get("judgment")
             )
-            sources.append({
-                "assignee": data["assignee"],
-                "file": path.name,
-                "count": count,
-            })
+            sources.append(
+                {
+                    "assignee": data["assignee"],
+                    "file": path.name,
+                    "count": count,
+                }
+            )
             all_annotations.append(data)
-            logger.info(f"로드: {path.name} (작업자: {data['assignee']}, {count}개 판정)")
+            logger.info(
+                f"로드: {path.name} (작업자: {data['assignee']}, {count}개 판정)"
+            )
         except Exception as e:
             logger.warning(f"로드 실패: {path} — {e}")
 
@@ -161,11 +175,13 @@ def merge_annotations(
                 stats["agreed"] += 1
             else:
                 # Disagreement — flag for manual resolution
-                disagreements.append({
-                    "qid": qid,
-                    "ttype": ttype,
-                    "annotations": judged,
-                })
+                disagreements.append(
+                    {
+                        "qid": qid,
+                        "ttype": ttype,
+                        "annotations": judged,
+                    }
+                )
                 # Temporarily take the latest
                 latest = max(judged, key=lambda e: e.get("timestamp", ""))
                 latest["needs_resolution"] = True
@@ -202,7 +218,7 @@ def print_report(result: Dict[str, Any]) -> None:
     for s in sources:
         logger.info(f"  {s['assignee']}: {s['count']}개 판정 ({s['file']})")
 
-    logger.info(f"\n통계:")
+    logger.info("\n통계:")
     logger.info(f"  전체 항목:     {stats['total_items']}")
     logger.info(f"  단일 리뷰어:   {stats['single_reviewer']}")
     logger.info(f"  판정 일치:     {stats['agreed']}")
@@ -255,10 +271,7 @@ def main():
             sys.exit(1)
         files = sorted(ann_dir.glob("*.json"))
         # Exclude merged.json and disagreements.json
-        files = [
-            f for f in files
-            if f.stem not in ("merged", "disagreements")
-        ]
+        files = [f for f in files if f.stem not in ("merged", "disagreements")]
 
     if not files:
         logger.error("머지할 JSON 파일 없음")
@@ -278,9 +291,15 @@ def main():
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(
-            {"merged_at": result["merged_at"], "sources": result["sources"],
-             "stats": result["stats"], "annotations": result["merged"]},
-            f, ensure_ascii=False, indent=2,
+            {
+                "merged_at": result["merged_at"],
+                "sources": result["sources"],
+                "stats": result["stats"],
+                "annotations": result["merged"],
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
         )
     logger.info(f"\n머지 결과 저장: {output_path}")
 
