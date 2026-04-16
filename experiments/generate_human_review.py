@@ -371,6 +371,12 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                   <button class="j-btn j-modify" onclick="setStage1('{qid}', '{ttype}', 'needs_modification')">수정필요</button>
                   <button class="j-btn j-reject" onclick="setStage1('{qid}', '{ttype}', 'rejected')">부적절</button>
                 </div>
+                <div class="judgment-reason-box" id="judgment-reason-box-{qid}-{ttype}" style="display:none">
+                  <label class="reason-label" id="judgment-reason-label-{qid}-{ttype}">판정 이유</label>
+                  <textarea class="judgment-reason" id="judgment-reason-{qid}-{ttype}" rows="2"
+                            placeholder="이 판정을 내린 이유를 기록하세요..."
+                            onchange="saveMeta('{qid}', '{ttype}')"></textarea>
+                </div>
               </div>
               <div class="stage-box stage2" id="stage2-{qid}-{ttype}" style="display:none">
                 <div class="stage-label">2단계: Solvability</div>
@@ -385,7 +391,7 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                        onchange="saveMeta('{qid}', '{ttype}')">
               </div>
               <textarea class="note-area" id="note-{qid}-{ttype}" rows="2"
-                        placeholder="판정 이유 / 수정 방향 메모..."
+                        placeholder="추가 메모 (선택사항)..."
                         onchange="saveMeta('{qid}', '{ttype}')"></textarea>
               <div class="judgment-status" id="status-{qid}-{ttype}"></div>
             </div>"""
@@ -649,6 +655,9 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .stage2 {{ border-top: 1px solid var(--border); padding-top: 8px; }}
 .solvable-reason {{ width: 100%; margin-top: 6px; background: var(--bg); border: 1px solid var(--amber); border-radius: 6px; color: var(--text); padding: 6px; font-size: 12px; }}
 .note-area {{ width: 100%; margin-top: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px; font-size: 12px; resize: vertical; }}
+.judgment-reason-box {{ margin-top: 8px; }}
+.reason-label {{ font-size: 11px; font-weight: 600; color: var(--amber); display: block; margin-bottom: 3px; }}
+.judgment-reason {{ width: 100%; background: var(--bg); border: 1px solid var(--amber); border-radius: 6px; color: var(--text); padding: 6px; font-size: 12px; resize: vertical; }}
 .judgment-status {{ margin-top: 4px; font-size: 11px; }}
 
 /* Ground Truth display */
@@ -1077,6 +1086,13 @@ function applyAnnotations() {{
     for (const [ttype, data] of Object.entries(types)) {{
       if (data.judgment) {{
         highlightStage1(qid, ttype, data.judgment);
+        // Show judgment reason box and restore value
+        const reasonBox = document.getElementById(`judgment-reason-box-${{qid}}-${{ttype}}`);
+        if (reasonBox) reasonBox.style.display = 'block';
+        if (data.judgment_reason) {{
+          const reasonEl = document.getElementById(`judgment-reason-${{qid}}-${{ttype}}`);
+          if (reasonEl) reasonEl.value = data.judgment_reason;
+        }}
         if (data.judgment === 'approved') {{
           const s2 = document.getElementById(`stage2-${{qid}}-${{ttype}}`);
           if (s2) s2.style.display = 'block';
@@ -1113,6 +1129,25 @@ function setStage1(qid, ttype, judgment) {{
   delete annotations[qid][ttype].solvability;
   delete annotations[qid][ttype].solvable_reason;
   highlightStage1(qid, ttype, judgment);
+  // Show judgment reason box with type-specific placeholder
+  const reasonBox = document.getElementById(`judgment-reason-box-${{qid}}-${{ttype}}`);
+  const reasonArea = document.getElementById(`judgment-reason-${{qid}}-${{ttype}}`);
+  const reasonLabel = document.getElementById(`judgment-reason-label-${{qid}}-${{ttype}}`);
+  if (reasonBox) {{
+    reasonBox.style.display = 'block';
+    const placeholders = {{
+      'approved': '승인 이유: 어떤 정보가 제거되어 풀 수 없는지 기록...',
+      'needs_modification': '수정 필요 이유: 어떤 부분을 어떻게 개선해야 하는지 기록...',
+      'rejected': '부적절 이유: 왜 변환이 무효한지 기록...'
+    }};
+    const labels = {{
+      'approved': '승인 판정 이유',
+      'needs_modification': '수정필요 판정 이유',
+      'rejected': '부적절 판정 이유'
+    }};
+    if (reasonArea) reasonArea.placeholder = placeholders[judgment] || '판정 이유를 기록하세요...';
+    if (reasonLabel) reasonLabel.textContent = labels[judgment] || '판정 이유';
+  }}
   // Show/hide stage 2
   const s2 = document.getElementById(`stage2-${{qid}}-${{ttype}}`);
   if (s2) {{
@@ -1184,8 +1219,10 @@ function saveMeta(qid, ttype) {{
   if (!annotations[qid]) annotations[qid] = {{}};
   if (!annotations[qid][ttype]) annotations[qid][ttype] = {{}};
   const note = document.getElementById(`note-${{qid}}-${{ttype}}`);
+  const judgmentReason = document.getElementById(`judgment-reason-${{qid}}-${{ttype}}`);
   const solvableReason = document.getElementById(`solvable-reason-${{qid}}-${{ttype}}`);
   if (note) annotations[qid][ttype].note = note.value;
+  if (judgmentReason && judgmentReason.parentElement.style.display !== 'none') annotations[qid][ttype].judgment_reason = judgmentReason.value;
   if (solvableReason && solvableReason.style.display !== 'none') annotations[qid][ttype].solvable_reason = solvableReason.value;
   saveAnnotations();
 }}
