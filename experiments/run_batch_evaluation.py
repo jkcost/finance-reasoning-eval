@@ -33,7 +33,7 @@ from config import ModelConfig
 from error_analysis import MODEL_REGISTRY
 from error_analysis.error_taxonomy import BUDGET_MODEL_SETS
 from metacognitive_metrics import ResponseType
-from model_runner import AnthropicProvider, GoogleProvider, OpenAIProvider
+from model_runner import AnthropicProvider, GoogleProvider, OllamaProvider, OpenAIProvider
 from refusal_detector import RefusalDetector
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -86,6 +86,8 @@ def init_providers(model_names: List[str]) -> Dict[str, Any]:
             providers[model_name] = AnthropicProvider(model_config)
         elif model_info.provider == "google":
             providers[model_name] = GoogleProvider(model_config)
+        elif model_info.provider == "ollama":
+            providers[model_name] = OllamaProvider(model_config)
         logger.info(f"[OK] {model_name}")
     return providers
 

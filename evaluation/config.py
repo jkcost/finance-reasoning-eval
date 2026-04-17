@@ -81,6 +81,13 @@ DEFAULT_PROVIDERS = {
         default_max_requests_per_minute=60,
         default_max_tokens_per_minute=100000,
     ),
+    "ollama": ProviderConfig(
+        name="Ollama (Local)",
+        api_key_env_var="",  # No API key needed
+        base_url="http://localhost:11434",  # Override with OLLAMA_BASE_URL env var
+        default_max_requests_per_minute=10,
+        default_max_tokens_per_minute=50000,
+    ),
 }
 
 # Default models from paper and available (verified via API)
@@ -205,7 +212,62 @@ DEFAULT_MODELS = [
         cost_per_million_tokens=0.075,  # Gemini 2.5 Flash pricing
         temperature=1.0,
     ),
+    # Ollama local models (no API key required, requires Ollama running locally)
+    # Install: https://ollama.ai — then: ollama pull <model_id>
+    ModelConfig(
+        id="ollama-llama3.1-8b",
+        name="Llama 3.1 8B (Local)",
+        provider="ollama",
+        api_key_env_var=None,
+        model_id="llama3.1:8b",
+        max_tokens=4096,
+        temperature=0.0,
+        cost_per_million_tokens=0.0,
+    ),
+    ModelConfig(
+        id="ollama-llama3.1-70b",
+        name="Llama 3.1 70B (Local)",
+        provider="ollama",
+        api_key_env_var=None,
+        model_id="llama3.1:70b",
+        max_tokens=4096,
+        temperature=0.0,
+        cost_per_million_tokens=0.0,
+    ),
+    ModelConfig(
+        id="ollama-qwen2.5-7b",
+        name="Qwen 2.5 7B (Local)",
+        provider="ollama",
+        api_key_env_var=None,
+        model_id="qwen2.5:7b",
+        max_tokens=4096,
+        temperature=0.0,
+        cost_per_million_tokens=0.0,
+    ),
+    ModelConfig(
+        id="ollama-qwen2.5-72b",
+        name="Qwen 2.5 72B (Local)",
+        provider="ollama",
+        api_key_env_var=None,
+        model_id="qwen2.5:72b",
+        max_tokens=4096,
+        temperature=0.0,
+        cost_per_million_tokens=0.0,
+    ),
+    ModelConfig(
+        id="ollama-deepseek-r1-8b",
+        name="DeepSeek R1 8B (Local)",
+        provider="ollama",
+        api_key_env_var=None,
+        model_id="deepseek-r1:8b",
+        max_tokens=4096,
+        temperature=0.0,
+        cost_per_million_tokens=0.0,
+    ),
 ]
+
+# Local models subset for quick reference
+LOCAL_MODELS = [m for m in DEFAULT_MODELS if m.provider == "ollama"]
 
 
 class ConfigManager:

@@ -492,6 +492,55 @@ class GoogleProvider(BaseProvider):
         return response_data.get("usage", {"prompt_tokens": 0, "completion_tokens": 0})
 
 
+# Ollama Local Provider (OpenAI-compatible)
+class OllamaProvider(BaseProvider):
+    """Ollama local models via OpenAI-compatible API."""
+
+    def __init__(self, model: ModelConfig, concurrency_limit: int = 2):
+        super().__init__(model, concurrency_limit=concurrency_limit)
+        base_url = model.base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.client = httpx.AsyncClient(
+            base_url=base_url,
+            headers={"Content-Type": "application/json"},
+            timeout=120.0,
+        )
+
+    async def _make_request(self, prompt: str) -> Dict[str, Any]:
+        start_time = time.time()
+        response = await self.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": self.model.model_id,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": self.model.temperature or 0.0,
+                "max_tokens": self.model.max_tokens or 4096,
+                "stream": False,
+            },
+        )
+        response_data = response.json()
+        if response.status_code != 200:
+            raise RuntimeError(f"Ollama error {response.status_code}: {response_data}")
+        usage_info = response_data.get("usage", {})
+        return {
+            "response": response_data,
+            "usage": {
+                "prompt_tokens": usage_info.get("prompt_tokens", 0),
+                "completion_tokens": usage_info.get("completion_tokens", 0),
+            },
+            "start_time": start_time,
+        }
+
+    def _extract_response_text(self, response_data: Dict[str, Any]) -> str:
+        api_response = response_data.get("response", {})
+        choices = api_response.get("choices", [])
+        if not choices:
+            return ""
+        return choices[0].get("message", {}).get("content", "").strip()
+
+    def _extract_usage(self, response_data: Dict[str, Any]) -> Dict[str, Any]:
+        return response_data.get("usage", {"prompt_tokens": 0, "completion_tokens": 0})
+
+
 # Model Runner Orchestrator
 class ModelRunner:
     """Orchestrates LLM model evaluation with concurrency control"""
@@ -526,6 +575,11 @@ class ModelRunner:
                 )
             elif provider == "google":
                 self.providers[model_config.id] = GoogleProvider(
+                    model_config,
+                    concurrency_limit=evaluation_config.concurrency_per_provider,
+                )
+            elif provider == "ollama":
+                self.providers[model_config.id] = OllamaProvider(
                     model_config,
                     concurrency_limit=evaluation_config.concurrency_per_provider,
                 )

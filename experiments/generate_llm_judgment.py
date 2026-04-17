@@ -56,6 +56,8 @@ def build_analysis_prompt(item: Dict[str, Any]) -> str:
     reviewer_lines = ""
     for r in item["reviewers"]:
         reviewer_lines += f"  - {r['name']}: {r['judgment']}"
+        if r.get("judgment_reason"):
+            reviewer_lines += f" | 판정이유: {r['judgment_reason']}"
         if r.get("note"):
             reviewer_lines += f" | 메모: {r['note']}"
         reviewer_lines += "\n"
@@ -188,6 +190,7 @@ def prepare_disagreement_items(
                 {
                     "name": a["assignee"],
                     "judgment": a["judgment"],
+                    "judgment_reason": a.get("judgment_reason", ""),
                     "note": a.get("note", ""),
                 }
                 for a in d["annotations"]
