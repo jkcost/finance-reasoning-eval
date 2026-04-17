@@ -12,12 +12,15 @@ Supports:
 
 import asyncio
 import json
-import time
-import random
+import logging
 import os
+import random
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 import httpx
 
@@ -125,9 +128,9 @@ class BaseProvider:
                         delay = (2 ** (attempt - 1)) * 1.0 + random.uniform(0, 0.5)
 
                     error_label = "overloaded" if is_overloaded else "error"
-                    print(
-                        f"  [WARN] Retry {attempt}/{max_attempts} for {config.name} "
-                        f"({error_label}, backoff {delay:.1f}s): {e}"
+                    logger.warning(
+                        "Retry %d/%d for %s (%s, backoff %.1fs): %s",
+                        attempt, max_attempts, config.name, error_label, delay, e,
                     )
                     await asyncio.sleep(delay)
                 else:
@@ -268,23 +271,18 @@ class OpenAIProvider(BaseProvider):
             },
         )
 
-        print(f"[DEBUG OpenAI HTTP] status: {response.status_code}")
-        print(f"[DEBUG OpenAI HTTP] response type: {type(response)}")
-        print(f"[DEBUG OpenAI HTTP] headers keys: {list(response.headers.keys())}")
+        response.raise_for_status()
 
         # Parse response JSON
         response_data = response.json()
 
-        print(f"[DEBUG OpenAI HTTP] response_data keys: {list(response_data.keys())}")
         if "error" in response_data:
-            print(f"[DEBUG OpenAI HTTP] error: {response_data['error']}")
+            logger.error("OpenAI API error: %s", response_data["error"])
 
         # Extract usage from response body (OpenAI returns usage in response, not headers)
         usage_info = response_data.get("usage", {})
         prompt_tokens = usage_info.get("prompt_tokens", 0)
         completion_tokens = usage_info.get("completion_tokens", 0)
-
-        print(f"[DEBUG OpenAI HTTP] usage: {usage_info}")
 
         return {
             "response": response_data,
@@ -357,14 +355,12 @@ class AnthropicProvider(BaseProvider):
             },
         )
 
-        print(f"[DEBUG Anthropic HTTP] status: {response.status_code}")
-        print(f"[DEBUG Anthropic HTTP] response type: {type(response)}")
-
         # Parse response JSON
         response_data = response.json()
 
         if response.status_code != 200:
-            print(f"[DEBUG Anthropic HTTP] error: {response_data}")
+            logger.error("Anthropic API error %d: %s", response.status_code, response_data)
+            response.raise_for_status()
 
         # Anthropic returns usage in response body
         usage_info = response_data.get("usage", {})
@@ -441,14 +437,12 @@ class GoogleProvider(BaseProvider):
             },
         )
 
-        print(f"[DEBUG Google HTTP] status: {response.status_code}")
-        print(f"[DEBUG Google HTTP] response type: {type(response)}")
-
         # Parse response JSON
         response_data = response.json()
 
         if response.status_code != 200:
-            print(f"[DEBUG Google HTTP] error: {response_data}")
+            logger.error("Google API error %d: %s", response.status_code, response_data)
+            response.raise_for_status()
 
         # Gemini returns usage in usageMetadata
         usage_metadata = response_data.get("usageMetadata", {})
@@ -619,17 +613,13 @@ class ModelRunner:
                 )
 
                 if functions_text:
-                    print(
-                        f"  [RAG] Retrieved {len(functions_dict) if functions_dict else 0} relevant functions"
-                    )
+                    n = len(functions_dict) if functions_dict else 0
+                    logger.debug("RAG retrieved %d relevant functions", n)
                 else:
-                    print(
-                        f"  [RAG] No functions retrieved, falling back to non-RAG mode"
-                    )
+                    logger.debug("RAG: no functions retrieved, falling back to non-RAG mode")
 
             except Exception as e:
-                print(f"  [WARN] RAG retrieval failed: {e}")
-                print(f"  [INFO] Continuing without RAG enhancement")
+                logger.warning("RAG retrieval failed: %s — continuing without RAG", e)
                 functions_text = None
 
         # Build prompt
@@ -647,10 +637,10 @@ class ModelRunner:
         for model_config in self.config_manager.get_models_for_evaluation():
             provider = self.providers.get(model_config.id)
             if not provider:
-                print(f"  [WARN] Skipping {model_config.id}: provider not available")
+                logger.warning("Skipping %s: provider not available", model_config.id)
                 continue
 
-            print(f"  → Querying {model_config.name} ({model_config.provider})...")
+            logger.info("Querying %s (%s)...", model_config.name, model_config.provider)
 
             try:
                 response = await provider.call_model(example, prompt)
@@ -662,8 +652,9 @@ class ModelRunner:
                     self.evaluation_config.max_cost_usd
                     and total_cost > self.evaluation_config.max_cost_usd
                 ):
-                    print(
-                        f"    💰 Budget exceeded: ${total_cost:.2f} > ${self.evaluation_config.max_cost_usd}"
+                    logger.warning(
+                        "Budget exceeded: $%.2f > $%.2f",
+                        total_cost, self.evaluation_config.max_cost_usd,
                     )
                     if self.evaluation_config.stop_on_budget_exceed:
                         break
@@ -673,14 +664,15 @@ class ModelRunner:
                     self.evaluation_config.max_tokens
                     and total_tokens > self.evaluation_config.max_tokens
                 ):
-                    print(
-                        f"    💰 Token limit exceeded: {total_tokens} > {self.evaluation_config.max_tokens}"
+                    logger.warning(
+                        "Token limit exceeded: %d > %d",
+                        total_tokens, self.evaluation_config.max_tokens,
                     )
                     if self.evaluation_config.stop_on_budget_exceed:
                         break
 
             except Exception as e:
-                print(f"  ❌ Error with {model_config.name}: {e}")
+                logger.error("Error with %s: %s", model_config.name, e)
                 responses[model_config.id] = LLMResponse(
                     model_id=model_config.id,
                     example_id=example.id,

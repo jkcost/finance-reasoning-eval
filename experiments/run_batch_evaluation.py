@@ -66,10 +66,12 @@ def init_providers(model_names: List[str]) -> Dict[str, Any]:
             logger.warning(f"Unknown model: {model_name}")
             continue
         model_info = MODEL_REGISTRY[model_name]
-        api_key = os.environ.get(model_info.api_key_env)
-        if not api_key:
-            logger.warning(f"{model_name}: No API key ({model_info.api_key_env})")
-            continue
+        # Ollama local models don't need an API key
+        if model_info.provider != "ollama":
+            api_key = os.environ.get(model_info.api_key_env)
+            if not api_key:
+                logger.warning(f"{model_name}: No API key ({model_info.api_key_env})")
+                continue
         model_config = ModelConfig(
             id=model_name,
             name=model_info.display_name,
@@ -128,7 +130,7 @@ def extract_answer(response: str) -> Tuple[Any, Optional[str], Optional[str]]:
     if re.search(r"(?i)INSUFFICIENT[_ ]INFORMATION", response):
         return "INSUFFICIENT_INFORMATION", None, None
     if re.search(r"(?i)CONTRADICTION[_ ]DETECTED", response):
-        return "INSUFFICIENT_INFORMATION", None, None
+        return "INSUFFICIENT_INFORMATION: CONTRADICTION_DETECTED", None, None
 
     code_match = re.search(r"```python\s*(.*?)```", response, re.DOTALL)
     if not code_match:
@@ -250,10 +252,17 @@ async def evaluate_one(
             executed_code=executed_code,
         )
 
-        if answer == "INSUFFICIENT_INFORMATION":
+        refusal_reason: Optional[str] = None
+        if answer is not None and str(answer).startswith("INSUFFICIENT_INFORMATION"):
             response_type = ResponseType.REFUSED.value
+            # Extract inline reason: "INSUFFICIENT_INFORMATION: <reason>"
+            colon_idx = str(answer).find(":")
+            if colon_idx >= 0:
+                refusal_reason = str(answer)[colon_idx + 1:].strip() or None
         else:
             response_type = detection.response_type.value
+            if detection.reason:
+                refusal_reason = detection.reason
 
         is_correct = check_answer(answer, ground_truth)
         case_type = classify_case(response_type, is_correct, transformation_type)
@@ -273,6 +282,7 @@ async def evaluate_one(
             "raw_response": raw_response,
             "executed_code": executed_code,
             "execution_error": execution_error,
+            "refusal_reason": refusal_reason,
         }
 
     except Exception as e:
@@ -292,6 +302,7 @@ async def evaluate_one(
             "raw_response": f"ERROR: {str(e)[:200]}",
             "executed_code": None,
             "execution_error": str(e)[:200],
+            "refusal_reason": None,
         }
 
 

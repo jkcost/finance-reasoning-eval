@@ -358,6 +358,49 @@ MODEL_REGISTRY: Dict[str, ModelInfo] = {
         api_key_env="GOOGLE_API_KEY",
         model_id="gemini-2.5-pro",
     ),
+    # =========================================================================
+    # Local Models via Ollama (no API key required — OLLAMA_BASE_URL optional)
+    # =========================================================================
+    "llama3.2:3b": ModelInfo(
+        name="llama3.2:3b",
+        display_name="Llama 3.2 3B (local)",
+        provider="ollama",
+        model_type=ModelType.GENERAL,
+        cost_per_million_input=0.0,
+        cost_per_million_output=0.0,
+        api_key_env="",
+        model_id="llama3.2:3b",
+    ),
+    "llama3.1:8b": ModelInfo(
+        name="llama3.1:8b",
+        display_name="Llama 3.1 8B (local)",
+        provider="ollama",
+        model_type=ModelType.GENERAL,
+        cost_per_million_input=0.0,
+        cost_per_million_output=0.0,
+        api_key_env="",
+        model_id="llama3.1:8b",
+    ),
+    "mistral:7b": ModelInfo(
+        name="mistral:7b",
+        display_name="Mistral 7B (local)",
+        provider="ollama",
+        model_type=ModelType.GENERAL,
+        cost_per_million_input=0.0,
+        cost_per_million_output=0.0,
+        api_key_env="",
+        model_id="mistral:7b",
+    ),
+    "qwen2.5:7b": ModelInfo(
+        name="qwen2.5:7b",
+        display_name="Qwen 2.5 7B (local)",
+        provider="ollama",
+        model_type=ModelType.GENERAL,
+        cost_per_million_input=0.0,
+        cost_per_million_output=0.0,
+        api_key_env="",
+        model_id="qwen2.5:7b",
+    ),
 }
 
 
@@ -389,4 +432,7 @@ BUDGET_MODEL_SETS = {
         "gemini-2.5-flash",
         "gemini-2.5-pro",
     ],
+    # Local Ollama models — free, requires `ollama serve` running locally
+    "local": ["llama3.1:8b", "mistral:7b", "qwen2.5:7b"],
+    "local-small": ["llama3.2:3b"],
 }

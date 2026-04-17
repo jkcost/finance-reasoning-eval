@@ -78,6 +78,7 @@ class DetectionResult:
     confidence_patterns_matched: List[str]
     hallucinated_values: List[str]
     confidence_score: float  # 0.0 (definitely refused) to 1.0 (definitely confident)
+    reason: str = ""  # human-readable explanation of the classification
 
 
 class RefusalDetector:
@@ -119,6 +120,7 @@ class RefusalDetector:
                 confidence_patterns_matched=[],
                 hallucinated_values=[],
                 confidence_score=0.0,
+                reason=f"Execution error: {execution_error[:200]}",
             )
 
         refusal_matches = self._find_matches(response, REFUSAL_PATTERNS)
@@ -143,6 +145,10 @@ class RefusalDetector:
         else:
             conf = confidence_score_raw / total
 
+        reason = self._build_reason(
+            response_type, refusal_matches, caveat_matches, hallucinated
+        )
+
         return DetectionResult(
             response_type=response_type,
             refusal_patterns_matched=refusal_matches,
@@ -150,7 +156,32 @@ class RefusalDetector:
             confidence_patterns_matched=confidence_matches,
             hallucinated_values=hallucinated,
             confidence_score=round(conf, 3),
+            reason=reason,
         )
+
+    def _build_reason(
+        self,
+        response_type: "ResponseType",
+        refusal_matches: List[str],
+        caveat_matches: List[str],
+        hallucinated: List[str],
+    ) -> str:
+        """Build a human-readable explanation for the classification."""
+        if response_type == ResponseType.REFUSED:
+            n = len(refusal_matches)
+            return f"Refused: {n} refusal signal(s) detected (e.g. missing/insufficient data keywords)"
+        if response_type == ResponseType.CAVEAT:
+            parts = []
+            if refusal_matches:
+                parts.append(f"{len(refusal_matches)} refusal signal(s)")
+            if caveat_matches:
+                parts.append(f"{len(caveat_matches)} uncertainty hedge(s)")
+            return "Caveat: " + " + ".join(parts) if parts else "Caveat: hedging language detected"
+        if response_type == ResponseType.CONFIDENT:
+            if hallucinated:
+                return f"Confident (hallucination risk): {len(hallucinated)} value(s) not found in context"
+            return "Confident: answer provided without expressed uncertainty"
+        return ""
 
     def _find_matches(self, text: str, patterns: List[str]) -> List[str]:
         """Find all matching patterns in text"""
