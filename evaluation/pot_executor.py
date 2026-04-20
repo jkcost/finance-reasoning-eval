@@ -47,36 +47,144 @@ class CodeExecutionSandbox:
         - ```python ... ```
         - ``` ... ```
         - Just code (no delimiters)
+
+        Handles common LLM issues:
+        - Text after closing backticks
+        - Missing backticks
+        - Explanation text mixed with code
         """
 
-        # Pattern 1: Standard python code block
-        pattern1 = r"```python\s*\n?(.*?)\n?```"
+        # Pattern 1: Standard python code block (가장 엄격하게 추출)
+        pattern1 = r"```python\s*\n(.*?)\n```"
         match = re.search(pattern1, response, re.DOTALL)
         if match:
-            return match.group(1).strip()
+            code = match.group(1).strip()
+            # 코드 블록 내에서 백틱이 있으면 제거
+            code = self._clean_code(code)
+            return code
 
         # Pattern 2: Generic code block
-        pattern2 = r"```\s*\n?(.*?)\n?```"
+        pattern2 = r"```\s*\n(.*?)\n```"
         match = re.search(pattern2, response, re.DOTALL)
         if match:
-            return match.group(1).strip()
+            code = match.group(1).strip()
+            code = self._clean_code(code)
+            return code
 
-        # Pattern 3: Look for variable assignment or return statement
-        # Find lines that look like code
+        # Pattern 3: def solution() 함수 블록 추출 (백틱 없는 경우)
+        # 함수 정의부터 다음 빈 줄이나 설명 텍스트까지
+        func_pattern = r"(def\s+\w+\s*\([^)]*\):\s*\n(?:[ \t]+[^\n]+\n?)+)"
+        func_match = re.search(func_pattern, response)
+        if func_match:
+            code = func_match.group(1).strip()
+            return self._clean_code(code)
+
+        # Pattern 4: Look for variable assignment or return statement
+        # Find lines that look like code, stop at explanation text
         lines = response.split("\n")
         code_lines = []
 
         in_code_block = False
+        found_code = False
+        consecutive_non_code = 0
+
         for line in lines:
-            if line.strip().startswith("```"):
-                in_code_block = not in_code_block
-            elif in_code_block or self._looks_like_code(line):
+            stripped = line.strip()
+
+            # 백틱 토글
+            if stripped.startswith("```"):
+                if in_code_block:
+                    # 코드 블록 종료
+                    break
+                in_code_block = True
+                continue
+
+            if in_code_block:
                 code_lines.append(line)
+                found_code = True
+            elif self._looks_like_code(line):
+                # 설명 텍스트 감지 - 코드 블록 종료
+                if self._is_explanation_text(stripped):
+                    if found_code:
+                        break
+                    continue
+                code_lines.append(line)
+                found_code = True
+                consecutive_non_code = 0
+            else:
+                # 코드가 시작된 후 비코드 라인이 연속되면 종료
+                if found_code and stripped:
+                    consecutive_non_code += 1
+                    if consecutive_non_code >= 2:
+                        break
 
         if code_lines:
-            return "\n".join(code_lines).strip()
+            code = "\n".join(code_lines).strip()
+            return self._clean_code(code)
 
         return None
+
+    def _clean_code(self, code: str) -> str:
+        """Clean extracted code by removing common issues"""
+
+        # 코드 끝에 붙은 백틱 제거
+        code = re.sub(r'```\s*$', '', code)
+        code = re.sub(r'```python\s*$', '', code)
+
+        # 코드 끝에 붙은 설명 텍스트 제거 (영문/한글)
+        lines = code.split('\n')
+        cleaned_lines = []
+
+        for i, line in enumerate(lines):
+            # 설명 텍스트로 시작하는 줄 감지
+            if self._is_explanation_text(line.strip()):
+                # 이전에 코드가 있었으면 여기서 종료
+                if cleaned_lines:
+                    break
+                continue
+            cleaned_lines.append(line)
+
+        return '\n'.join(cleaned_lines).strip()
+
+    def _is_explanation_text(self, text: str) -> bool:
+        """Check if line is explanation text (not code)"""
+
+        if not text:
+            return False
+
+        # 설명 텍스트 패턴
+        explanation_patterns = [
+            r'^The\s+',  # "The program...", "The answer..."
+            r'^This\s+',  # "This calculates..."
+            r'^Here\s+',  # "Here's the..."
+            r'^Note:',
+            r'^Output:',
+            r'^Result:',
+            r'^Explanation:',
+            r'^위\s+',  # 한글 설명
+            r'^이\s+',
+            r'^해당\s+',
+            r'^결과는?\s+',
+            r'^정답은?\s+',
+            r'^The key steps',
+            r'^Key steps',
+        ]
+
+        for pattern in explanation_patterns:
+            if re.match(pattern, text, re.IGNORECASE):
+                return True
+
+        # 문장으로 시작하는 경우 (대문자로 시작하고 코드 키워드가 아닌 경우)
+        code_starters = ['def ', 'class ', 'if ', 'for ', 'while ', 'return ',
+                         'import ', 'from ', 'try:', 'except', 'with ', 'async ']
+
+        if text and text[0].isupper():
+            if not any(text.startswith(s) for s in code_starters):
+                # 코드처럼 보이는 연산자가 없으면 설명 텍스트
+                if '=' not in text and '(' not in text:
+                    return True
+
+        return False
 
     def _looks_like_code(self, line: str) -> bool:
         """Heuristic to identify if line looks like code"""

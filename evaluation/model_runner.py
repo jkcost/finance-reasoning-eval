@@ -89,34 +89,48 @@ class BaseProvider:
         self.total_tokens_used = 0
 
     async def _request_with_retry(self, method: str, **kwargs) -> Dict[str, Any]:
-        """Execute request with retry logic"""
+        """Execute request with retry logic.
 
+        Handles transient errors with exponential backoff.
+        529/overloaded errors get longer backoff delays.
+        Note: Semaphore is managed by call_model() via async with,
+        so we do NOT release it here.
+        """
         config = self.model
-        max_attempts = 3
+        max_attempts = 5
 
         for attempt in range(1, max_attempts + 1):
             try:
                 response = await method(**kwargs)
-                # Note: Semaphore is released by caller
                 return {
                     "status": "success",
                     "response": response,
                     "attempt": attempt,
                 }
             except Exception as e:
-                # Release semaphore on error so other requests can proceed
-                self.semaphore.release()
+                error_str = str(e).lower()
+                is_overloaded = (
+                    "529" in error_str
+                    or "overloaded" in error_str
+                    or "rate_limit" in error_str
+                    or "rate limit" in error_str
+                )
 
                 if attempt < max_attempts:
-                    # Exponential backoff
-                    delay = (2 ** (attempt - 1)) * 1.0 + random.uniform(0, 0.5)
-                    await asyncio.sleep(delay)
+                    if is_overloaded:
+                        # Longer backoff for overloaded/rate limit errors
+                        delay = [5, 15, 45, 90][min(attempt - 1, 3)] + random.uniform(0, 2)
+                    else:
+                        # Standard exponential backoff
+                        delay = (2 ** (attempt - 1)) * 1.0 + random.uniform(0, 0.5)
 
+                    error_label = "overloaded" if is_overloaded else "error"
                     print(
-                        f"  [WARN] Retry {attempt}/{max_attempts} for {config.name} after {delay:.1f}s: {e}"
+                        f"  [WARN] Retry {attempt}/{max_attempts} for {config.name} "
+                        f"({error_label}, backoff {delay:.1f}s): {e}"
                     )
+                    await asyncio.sleep(delay)
                 else:
-                    # Final attempt failed
                     return {
                         "status": "failed",
                         "error": str(e),
