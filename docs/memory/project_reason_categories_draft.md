@@ -96,6 +96,32 @@ experiments/results/metacognitive/annotations/
 - ~~`AUTHORITY_MISMATCH`~~: IC-L3 전용 같지만, 실제로는 CONFLICTING_VALUES의 서브타입. 분리 시 sparsity 우려. **Kappa 낮으면 분리 재검토**.
 - ~~`REASONING_CHAIN_BROKEN`~~: 애매하고 측정 어려움 → 제외.
 
+## C2 Sanity Check 결과 (2026-04-21)
+
+**데이터**: `eval_metacognitive.json` 기존 결과에서 R4 solvable 필터 적용 후 287 reason 추출 (gpt-4o-mini × metacognitive × 7 변형).
+
+| 카테고리 | 검증 결과 | 휴리스틱 샘플 수 | 비고 |
+|---------|---------|-----------------|------|
+| MISSING_REQUIRED_VALUE | ✅ 매우 적합 | 183 (63.8%) | EA-partial/full, SA 주류 패턴 |
+| MISSING_SILENT | ⚠️ reason 텍스트로 구분 불가 | — | EA-partial과 reason 텍스트 거의 동일. v1 통합 검토 |
+| CONFLICTING_VALUES | ❌ 샘플 부족 | 1 | IC 거부율 자체가 낮음 (회의 finding 재확인) |
+| UNIT_AMBIGUITY | ❌ 샘플 부족 | 1 | IC-L2 reason 필요 |
+| TEMPORAL_MISMATCH | ❌ 샘플 부족 | IC-L4 1건만 유효 | 휴리스틱 false positive 70건(EA의 "quarterly"/"annual" 단어 혼동) |
+| UNDERSPECIFIED | ✅ fallback 적합 | 31 (10.8%) | "The question does not provide..." variant |
+
+**주요 결론**:
+1. EA/SA 축(reason 292개 중 80%)은 v0로 즉시 본 코딩 진행 가능
+2. IC 축은 샘플 절대 부족 → `phase_B_contradiction_aware_*.json` 추가 추출 또는 IC 전용 A1 재실행 필요
+3. **v1 수정 제안**: `MISSING_SILENT`와 `MISSING_REQUIRED_VALUE`를 `MISSING_DATA`로 통합, `transformation_type`을 metadata로 병용하여 분석 시 구분. **5-카테고리 체계**로 단순화 후보.
+4. 구 프롬프트(4/13) reason은 EA/SA 구분이 불가능 → **신규 프롬프트(12902ed) 재실행은 MISSING_* 서브타입을 구분하려는 경우에만 의미 있음**. 현재 목적이 "비대칭성 측정"이면 통합 카테고리도 무방.
+
+## 개정 이력
+
+| 버전 | 날짜 | 변경 |
+|------|------|------|
+| v0 | 2026-04-21 | 초안 — 카테고리 6개 |
+| v0.1 | 2026-04-21 | C2 sanity check — EA/SA v0 적합, IC 샘플 부족 발견, MISSING 통합 제안 |
+
 ## 연결
 
 - 스키마: [docs/schemas/reason_record.md](../schemas/reason_record.md)
