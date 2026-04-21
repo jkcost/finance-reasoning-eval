@@ -8,6 +8,18 @@ originSessionId: fb7b68ad-0aa6-4dd2-b270-e68c7ee4409a
 
 POT(Program-of-Thought) 형식 LLM이 **context에 없는 원본 숫자로 답을 생성하는 현상** 발견 (test-2001 등). 이건 metacognitive evaluation의 타당성을 위협함 — "IC 탐지 실패"가 실제 능력 gap인지, 단순 원본 기억에 의존한 건지 구분 불가.
 
+## 4/15 회의 재현 증거 — 모델별 편차
+
+test-2009(EA-partial) 원금 1M 제거 → 모델이 스스로 1million 회상해 정답 도출. 단위(yen → dollar) 치환 ablation 결과:
+
+| 모델 | 단위 바꿔도 1million 고수 | 해석 |
+|------|---------------------------|------|
+| Gemini-2.5-flash | **강함** — 1million 그대로 | 학습 데이터 편향 강함 |
+| GPT-4o-mini | 약함 — 10K/100K 등으로 따라감 | 편향 상대적으로 약함 |
+| Claude-haiku-4 | 혼재 — 상황 따라 | 중간 |
+
+**해석 (회의 합의)**: 실험 설계 문제가 아니라 **학습 데이터에서 원금=1million 표현 빈도가 압도적**. POT가 중간 추론을 숨기므로 "회상인지 추론인지" 겉보기로 구분 불가 → Value Provenance Classifier 필요성 재확인.
+
 ## 구성 요소
 
 **Value Provenance Classifier** — 응답의 각 숫자를 4가지로 자동 분류:
