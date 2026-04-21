@@ -365,6 +365,63 @@ DO NOT assume either value is correct.
 Only after verifying ALL values are consistent, write solution code.
 """
 
+# ============================================================================
+# PROMPT STRATEGY: ic_cot_trace (Measurement validity — expose value selection)
+# Design: Forces the model to show its reasoning trace BEFORE writing code.
+#         Each numeric value used in the solution must be annotated with
+#         source (field name or context phrase). IC-L2/L3/L4 variants need
+#         this to distinguish "conflict detected" vs "value silently picked".
+# Origin: 2026-04-15 team sync — POT hides value selection in IC 변형.
+# ============================================================================
+COT_SYSTEM_IC_COT_TRACE = (
+    "You are a financial expert. Follow this reasoning protocol rigorously:\n\n"
+    "REASONING TRACE (required before any calculation):\n"
+    "  1. IDENTIFY: List every numeric value needed to answer the question.\n"
+    "  2. LOCATE: For each value, quote the exact source from the context\n"
+    "     (field name, table cell, sentence). Write in the form:\n"
+    "       `revenue = 500 million [from: 'Revenue for FY2023 was $500 million']`\n"
+    "  3. CROSS-CHECK: If multiple context mentions give different values for\n"
+    "     the same metric, STOP and report:\n"
+    "       'INSUFFICIENT_INFORMATION: conflict on [metric] — [v1] vs [v2]\n"
+    "        (sources: [loc1], [loc2]). Cannot disambiguate.'\n"
+    "  4. MISSING: If a required value is absent, report:\n"
+    "       'INSUFFICIENT_INFORMATION: [metric] not found in context.'\n"
+    "  5. COMPUTE: Only after trace is complete, write the formula and\n"
+    "     substitute. Conclude with 'Therefore, the answer is {final answer}'."
+)
+
+POT_SYSTEM_IC_COT_TRACE = """You are a financial expert. Follow this reasoning protocol rigorously:
+
+REASONING TRACE (write this as comments inside the solution BEFORE any computation):
+
+  1. IDENTIFY: List every numeric value needed to answer the question.
+  2. LOCATE: For each value, quote the exact source from the context
+     (field name, table cell, sentence) in a comment.
+  3. CROSS-CHECK: If multiple context mentions give different values for
+     the same metric, generate:
+```python
+def solution():
+    # IDENTIFY: need <metric1>, <metric2>, ...
+    # LOCATE: <metric1> from <loc1>
+    # CROSS-CHECK: <metric> has conflicting values <v1> vs <v2>
+    return "INSUFFICIENT_INFORMATION: conflict on <metric> — <v1> vs <v2>"
+```
+  4. MISSING: If a required value is absent, generate:
+```python
+def solution():
+    # IDENTIFY: need <metric1>, <metric2>, ...
+    # MISSING: <metric> not found in context
+    return "INSUFFICIENT_INFORMATION: <metric> not found in context"
+```
+  5. COMPUTE: Only when the trace passes all checks, write the actual
+     calculation AFTER the trace comments. Every value used must be
+     traceable to a LOCATE comment above.
+
+Target usage: IC-L2 (unit mismatch), IC-L3 (authority conflict),
+IC-L4 (period sum mismatch) variants where understanding WHICH value
+the model chose, and WHY, is essential to measurement validity.
+"""
+
 PROMPT_SYSTEMS = {
     "standard": {"COT": COT_SYSTEM_STANDARD, "POT": POT_SYSTEM_STANDARD},
     "metacognitive": {"COT": COT_SYSTEM_METACOGNITIVE, "POT": POT_SYSTEM_METACOGNITIVE},
@@ -383,6 +440,10 @@ PROMPT_SYSTEMS = {
     "ic_crosscheck": {
         "COT": COT_SYSTEM_IC_CROSSCHECK,
         "POT": POT_SYSTEM_IC_CROSSCHECK,
+    },
+    "ic_cot_trace": {
+        "COT": COT_SYSTEM_IC_COT_TRACE,
+        "POT": POT_SYSTEM_IC_COT_TRACE,
     },
 }
 
