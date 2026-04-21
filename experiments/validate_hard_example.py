@@ -43,11 +43,13 @@ from __future__ import annotations
 
 import argparse
 import ast
-import io
 import json
 import logging
-import multiprocessing
+import math
+import os
+import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -61,12 +63,59 @@ logger = logging.getLogger(__name__)
 
 
 ALLOWED_IMPORTS = frozenset({"math", "statistics", "fractions", "decimal", "numpy", "pandas"})
+BANNED_NAMES = frozenset({
+    "exec", "eval", "compile", "__import__", "open",
+    "getattr", "setattr", "delattr", "globals", "locals", "vars", "dir",
+})
+BANNED_DUNDER = frozenset({
+    "__class__", "__bases__", "__subclasses__", "__globals__",
+    "__builtins__", "__dict__", "__getattribute__", "__mro__",
+})
+BANNED_ATTRIBUTE_CHAINS = frozenset({
+    "os.system", "os.popen", "os.execv", "os.execve", "os.spawn",
+    "subprocess.run", "subprocess.Popen", "subprocess.call",
+    "socket.socket", "socket.create_connection",
+    "pandas.read_csv", "pandas.read_json", "pandas.read_pickle", "pandas.read_parquet",
+    "pandas.to_pickle", "pandas.to_csv",
+    "numpy.load", "numpy.save", "numpy.fromfile", "numpy.tofile",
+})
+
+# Attribute leaf names that enable I/O or RCE regardless of alias.
+# ``import numpy as np; np.load(...)`` bypasses chain match but not this leaf set.
+BANNED_ATTRIBUTE_LEAVES = frozenset({
+    "system", "popen", "execv", "execve", "spawn", "spawnl", "spawnlp",
+    "Popen", "call", "check_output", "check_call",
+    "socket", "create_connection", "urlopen",
+    "read_csv", "read_json", "read_pickle", "read_parquet", "read_hdf",
+    "read_excel", "read_sql", "read_table", "read_feather",
+    "to_pickle", "to_csv", "to_json", "to_excel", "to_parquet", "to_feather",
+    "load", "save", "fromfile", "tofile", "loadtxt", "savetxt",
+    "genfromtxt", "load_npz",
+})
+
+
+def _resolve_attribute_chain(node: ast.AST) -> str | None:
+    """Resolve ``os.system`` style attribute chains to dotted strings."""
+    parts: list[str] = []
+    current: ast.AST | None = node
+    while isinstance(current, ast.Attribute):
+        parts.insert(0, current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        parts.insert(0, current.id)
+        return ".".join(parts)
+    return None
 
 
 def _check_solution_safety(source: str) -> tuple[bool, str]:
     """Run AST-level safety check on a python solution.
 
-    Rejects solutions that import disallowed modules, open files, exec/eval, or spawn subprocesses.
+    Blocks:
+      - disallowed module imports (whitelist: math, statistics, fractions, decimal, numpy, pandas)
+      - direct name calls like exec/eval/__import__/open/getattr/vars/...
+      - dunder attribute access (__class__, __subclasses__, __globals__, ...)
+      - attribute-chain calls like os.system, subprocess.run, socket.socket,
+        pandas.read_csv / to_pickle, numpy.load
     """
     try:
         tree = ast.parse(source)
@@ -82,64 +131,124 @@ def _check_solution_safety(source: str) -> tuple[bool, str]:
             base = (node.module or "").split(".")[0]
             if base not in ALLOWED_IMPORTS:
                 return False, f"disallowed from-import: {node.module}"
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in {"exec", "eval", "compile", "__import__", "open"}:
+        elif isinstance(node, ast.Attribute):
+            if node.attr in BANNED_DUNDER:
+                return False, f"disallowed dunder access: {node.attr}"
+        elif isinstance(node, ast.Name):
+            if node.id in BANNED_NAMES:
+                return False, f"disallowed name: {node.id}"
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in BANNED_NAMES:
                 return False, f"disallowed call: {node.func.id}"
+            if isinstance(node.func, ast.Attribute):
+                chain = _resolve_attribute_chain(node.func)
+                if chain in BANNED_ATTRIBUTE_CHAINS:
+                    return False, f"disallowed attribute call: {chain}"
+                if node.func.attr in BANNED_ATTRIBUTE_LEAVES:
+                    return False, f"disallowed attribute call (leaf): {node.func.attr}"
     return True, "ok"
 
 
-def _sandbox_worker(source: str, return_queue: "multiprocessing.Queue") -> None:
-    """Run the solution in a subprocess worker and send output back."""
-    buffer = io.StringIO()
-    sys.stdout = buffer
+def _wrap_solution_for_execution(source: str) -> str:
+    """Ensure solution output is printed to stdout.
+
+    FinanceReasoning solutions are typically ``def solution(): ... return value``.
+    Without invocation, executing the source only defines the function. This wrapper
+    appends ``print(solution())`` when a top-level ``solution`` function exists and
+    no top-level ``print`` statement already appears.
+    """
     try:
-        globals_dict: dict[str, Any] = {"__name__": "__main__"}
-        exec(compile(source, "<sandbox>", "exec"), globals_dict)  # noqa: S102
-        return_queue.put({"ok": True, "stdout": buffer.getvalue()})
-    except Exception as exc:  # noqa: BLE001 — we want to surface any error
-        return_queue.put({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
-    finally:
-        sys.stdout = sys.__stdout__
+        tree = ast.parse(source)
+    except SyntaxError:
+        return source
+
+    has_solution_fn = any(
+        isinstance(node, ast.FunctionDef) and node.name == "solution"
+        for node in tree.body
+    )
+    has_top_level_print = any(
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "print"
+        for node in tree.body
+    )
+
+    if has_solution_fn and not has_top_level_print:
+        return source.rstrip() + "\n\nprint(solution())\n"
+    return source
 
 
 def run_sandbox(source: str, timeout: float = 5.0) -> dict[str, Any]:
-    """Execute source in a subprocess with timeout. Returns {ok, stdout?, error?}."""
+    """Execute source in a subprocess with timeout.
+
+    Safety is checked via AST before invocation. The source is written to a temp file
+    and run as ``python <tmp>`` so the subprocess is fully isolated from our process
+    (works identically on fork/spawn platforms).
+
+    Returns dict with keys: ``ok`` (bool), ``stdout``, ``error``.
+    """
     ok, msg = _check_solution_safety(source)
     if not ok:
         return {"ok": False, "error": f"safety_check_failed: {msg}"}
 
-    ctx = multiprocessing.get_context("spawn")
-    queue: multiprocessing.Queue = ctx.Queue()
-    proc = ctx.Process(target=_sandbox_worker, args=(source, queue))
-    proc.start()
-    proc.join(timeout=timeout)
+    wrapped = _wrap_solution_for_execution(source)
 
-    if proc.is_alive():
-        proc.terminate()
-        proc.join(1.0)
-        return {"ok": False, "error": f"timeout_after_{timeout}s"}
+    # Isolate the subprocess environment: strip API keys and other secrets so a
+    # malicious solution cannot exfiltrate them via stdout. Only keep PATH and a
+    # minimal locale so numpy/pandas imports still work.
+    sanitized_env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+        "LC_ALL": os.environ.get("LC_ALL", "en_US.UTF-8"),
+        "HOME": tempfile.gettempdir(),
+    }
 
-    if queue.empty():
-        return {"ok": False, "error": "empty_queue"}
-    return queue.get()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir) / "solution.py"
+        tmp_path.write_text(wrapped, encoding="utf-8")
+        try:
+            result = subprocess.run(
+                [sys.executable, "-I", str(tmp_path)],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+                env=sanitized_env,
+                cwd=tmp_dir,
+            )
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": f"timeout_after_{timeout}s"}
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip().splitlines()
+        last_line = stderr[-1] if stderr else "unknown_error"
+        return {"ok": False, "error": last_line[:200]}
+
+    return {"ok": True, "stdout": result.stdout or ""}
 
 
 def _extract_last_number(stdout: str) -> str | None:
-    """Parse the final numeric output line (supports floats, ints, scientific notation)."""
+    """Parse the final numeric output line (supports floats, ints, scientific notation).
+
+    Rejects NaN/Inf sentinels so that downstream delta comparison never misinterprets
+    ``new_answer != original_answer`` as a successful transformation when both are NaN.
+    """
     if not stdout:
         return None
     for line in reversed(stdout.strip().splitlines()):
         line = line.strip()
         if not line:
             continue
-        # Accept the raw line if it's a single number or the last token is numeric.
         tokens = line.replace(",", "").split()
         for token in reversed(tokens):
             try:
-                float(token)
-                return token
+                value = float(token)
             except ValueError:
                 continue
+            if not math.isfinite(value):
+                return None
+            return token
     return None
 
 
@@ -147,7 +256,9 @@ def _replace_literal(source: str, old_value: float, new_value: float) -> tuple[s
     """Replace a numeric literal in source via AST → source transform.
 
     Returns (new_source, replacement_count). If old_value isn't found, returns (None, 0).
-    Uses a simple line-based regex-free approach via ast.unparse (Python 3.9+).
+    Explicitly excludes bool constants (True/False) since ``isinstance(True, int)`` is True
+    and matching float(True)==1.0 would corrupt control flow when old_value=1.0.
+    Uses math.isclose with a small absolute tolerance to avoid IEEE-754 equality pitfalls.
     """
     try:
         tree = ast.parse(source)
@@ -159,7 +270,11 @@ def _replace_literal(source: str, old_value: float, new_value: float) -> tuple[s
             self.count = 0
 
         def visit_Constant(self, node: ast.Constant) -> ast.AST:
-            if isinstance(node.value, (int, float)) and float(node.value) == float(old_value):
+            if isinstance(node.value, bool):  # bool is int subclass; guard first
+                return node
+            if isinstance(node.value, (int, float)) and math.isclose(
+                float(node.value), float(old_value), rel_tol=1e-9, abs_tol=1e-9
+            ):
                 self.count += 1
                 return ast.copy_location(ast.Constant(value=new_value), node)
             return node
