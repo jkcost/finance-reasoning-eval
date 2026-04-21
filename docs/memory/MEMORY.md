@@ -79,6 +79,7 @@
 - [연구 앵글 2축 확장 — 판정 이유 카테고리화 + Hard example 생성](project_rq_direction_shift_2026_04_15.md)
 - [POT 프롬프트의 IC 판정 한계 — CoT/reasoning trace 전환](project_pot_limitation_ic.md)
 - [원본 오답 문제는 메인 분석에서 제외](feedback_exclude_baseline_wrong.md)
+- [판정 이유 카테고리 v0 draft + Kappa 프로토콜](project_reason_categories_draft.md)
 
 ## Feedback
 - [변환은 반드시 LLM 기반으로 수행](feedback_llm_based_transformation.md)
