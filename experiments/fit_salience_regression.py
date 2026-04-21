@@ -89,7 +89,7 @@ def _index_transformations(
                 continue
             index[(qid, ttype)] = {
                 "context_original": context_original,
-                "context_transformed": tx.get("transformed_content", "") or "",
+                "context_transformed": tx.get("context_transformed", "") or "",
                 "removed_or_modified": tx.get("removed_or_modified", "") or "",
             }
     return index

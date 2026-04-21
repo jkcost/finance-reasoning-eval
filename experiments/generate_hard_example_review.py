@@ -101,7 +101,7 @@ def render_review(
     </div>
     <div>
       <label>변환된 content ({_esc(ic_level)})</label>
-      <pre>{_esc(tx.get("transformed_content", "")[:2000])}</pre>
+      <pre>{_esc(tx.get("context_transformed", "")[:2000])}</pre>
     </div>
   </section>
 

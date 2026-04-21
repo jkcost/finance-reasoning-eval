@@ -54,7 +54,7 @@ def _index_transformations(batch: dict[str, Any]) -> dict[tuple[str, str], dict[
         for ttype, tx in (problem.get("transformations") or {}).items():
             if not isinstance(tx, dict) or not tx.get("success"):
                 continue
-            context_transformed = tx.get("transformed_content", "") or ""
+            context_transformed = tx.get("context_transformed", "") or ""
             index[(str(qid), ttype)] = {
                 "context_original": context_original,
                 "context_transformed": context_transformed,
