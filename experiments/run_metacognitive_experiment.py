@@ -131,9 +131,11 @@ IMPORTANT: Before writing code, verify that ALL required data is present in the 
 If any critical information is missing, contradictory, or ambiguous, generate:
 ```python
 def solution():
-    # INSUFFICIENT_INFORMATION: [explain what data is missing]
-    return "INSUFFICIENT_INFORMATION"
+    return "INSUFFICIENT_INFORMATION: [explain exactly what data is missing or contradictory]"
 ```
+Replace the bracketed text with a specific description, e.g.:
+  return "INSUFFICIENT_INFORMATION: Q4 2023 revenue figure is absent from the context"
+  return "INSUFFICIENT_INFORMATION: Operating expenses for 2022 are contradictory — two values given"
 Do NOT guess, assume, or fabricate missing values.
 
 If the data is sufficient, generate the solution program. Example:
@@ -185,10 +187,8 @@ For each required value, mark STATUS: AVAILABLE or MISSING.
 If any value is MISSING or data is CONTRADICTORY, generate:
 ```python
 def solution():
-    # DATA AUDIT RESULT:
-    # [list missing values]
-    # STATUS: INSUFFICIENT
-    return "INSUFFICIENT_INFORMATION"
+    # DATA AUDIT: [list missing/contradictory values here]
+    return "INSUFFICIENT_INFORMATION: [specific description of missing or contradictory data]"
 ```
 
 STEP 2 - SOLUTION (only if ALL data is AVAILABLE):
@@ -243,16 +243,14 @@ Scan the context for any CONTRADICTIONS or DISCREPANCIES.
 If two different values exist for the same data point, generate:
 ```python
 def solution():
-    # CONTRADICTION_DETECTED: [explain conflicting values]
-    return "INSUFFICIENT_INFORMATION"
+    return "INSUFFICIENT_INFORMATION: CONTRADICTION_DETECTED — [describe conflicting values, e.g. revenue is both $10M and $15M]"
 ```
 
 STEP 2 - DATA COMPLETENESS CHECK:
 List ALL required data values. If any value is MISSING, generate:
 ```python
 def solution():
-    # INSUFFICIENT_INFORMATION: [list missing values]
-    return "INSUFFICIENT_INFORMATION"
+    return "INSUFFICIENT_INFORMATION: [list the specific missing values required to solve this problem]"
 ```
 
 STEP 3 - SOLUTION (only if NO contradictions AND ALL data available):
@@ -318,14 +316,13 @@ EXAMPLE of a data contradiction:
   → These conflict. Generate:
 ```python
 def solution():
-    # CONTRADICTION_DETECTED: Revenue reported as both $10M and $15M
-    return "INSUFFICIENT_INFORMATION"
+    return "INSUFFICIENT_INFORMATION: CONTRADICTION_DETECTED — 2023 revenue is reported as both $10M and $15M"
 ```
 
 Steps:
 1. List every numeric value and its source.
 2. Check for any value appearing twice with different numbers.
-3. If contradictions exist, return "INSUFFICIENT_INFORMATION".
+3. If contradictions exist, return "INSUFFICIENT_INFORMATION: CONTRADICTION_DETECTED — [details]".
 4. Only if consistent, solve with code.
 """
 
@@ -355,8 +352,7 @@ For EVERY numeric value you extract:
   2. If different values exist for the same metric, generate:
 ```python
 def solution():
-    # VALUE_CONFLICT: [metric] has values [v1] and [v2]
-    return "INSUFFICIENT_INFORMATION"
+    return "INSUFFICIENT_INFORMATION: VALUE_CONFLICT — [metric] appears as [v1] and [v2] in context"
 ```
 
 DO NOT proceed with calculation if ANY value conflict exists.
@@ -435,7 +431,10 @@ def get_available_models(requested_models: List[str]) -> List[str]:
             print(f"[WARN] Unknown model: {model_name}")
             continue
         model_info = MODEL_REGISTRY[model_name]
-        if os.environ.get(model_info.api_key_env):
+        if model_info.provider == "ollama":
+            available.append(model_name)
+            print(f"[OK] {model_name}: local Ollama model")
+        elif os.environ.get(model_info.api_key_env):
             available.append(model_name)
             print(f"[OK] {model_name}: API key found")
         else:
@@ -495,6 +494,9 @@ class MetacognitiveExperiment:
                 self.providers[model_name] = AnthropicProvider(model_config)
             elif model_info.provider == "google":
                 self.providers[model_name] = GoogleProvider(model_config)
+            elif model_info.provider == "ollama":
+                from model_runner import OllamaProvider
+                self.providers[model_name] = OllamaProvider(model_config)
 
     def _build_prompt(
         self,
