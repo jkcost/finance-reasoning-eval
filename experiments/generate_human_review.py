@@ -971,6 +971,93 @@ h1 {{ font-size: 22px; font-weight: 600; }}
       </div>
 
       <div class="guide-section">
+        <h3>A1 Reason Category — 거부 이유 분류 (신규, v3)</h3>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+          모델이 <code>INSUFFICIENT_INFORMATION</code>으로 거부할 때 남긴 reason 텍스트를 아래 6 카테고리로 태깅합니다.
+          각 <strong>metacognitive 응답 카드</strong> 내부의 🏷 배지는 휴리스틱 자동 태깅(<em>preview</em>)이며, 리뷰어가 수정할 수 있습니다.
+          구 POT 프롬프트 기반이라 IC 계열은 reason 자체가 드물어 배지가 거의 비어있습니다 — 이는
+          <strong>POT 측정 한계의 시각적 증거</strong>이며, B1(<code>ic_cot_trace</code>) 실행 후 v4에서 채워질 예정입니다.
+        </p>
+        <table>
+          <tr><th>카테고리 배지</th><th>정의</th><th>예시 reason</th><th>주로 발생</th></tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-MISSING_REQUIRED_VALUE">MISSING_REQUIRED_VALUE</span></td>
+            <td>계산에 필수인 값이 <strong>명시적으로</strong> 비었음을 인지</td>
+            <td>"Cost of equity is missing"</td>
+            <td>EA-partial (N/A 마커 인지)</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-MISSING_SILENT">MISSING_SILENT</span></td>
+            <td>마커 없이 데이터 부재를 <strong>암묵적으로</strong> 추론</td>
+            <td>"Daily closing prices are not provided"</td>
+            <td>SA (무표지 제거)</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-CONFLICTING_VALUES">CONFLICTING_VALUES</span></td>
+            <td>두 개 이상의 모순된 수치가 공존함을 지적</td>
+            <td>"Revenue is listed as both $500M and $750M"</td>
+            <td>IC-L1/L3 (권위 충돌)</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-UNIT_AMBIGUITY">UNIT_AMBIGUITY</span></td>
+            <td>단위/통화/규모 불일치</td>
+            <td>"Mismatch between million and billion units"</td>
+            <td>IC-L2</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-TEMPORAL_MISMATCH">TEMPORAL_MISMATCH</span></td>
+            <td>기간·시점 불일치 (분기합 ≠ 연간 등)</td>
+            <td>"Quarterly sums don't match annual total"</td>
+            <td>IC-L4, TA</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-UNDERSPECIFIED">UNDERSPECIFIED</span></td>
+            <td>위 5개에 속하지 않는 일반적 정보 부족 (fallback)</td>
+            <td>"The question does not provide the necessary data..."</td>
+            <td>모든 변형</td>
+          </tr>
+        </table>
+        <p style="font-size:11px;color:var(--text2);margin-top:8px;">
+          <strong>리뷰 체크:</strong> auto 태그가 reason 텍스트와 실제로 맞는지 확인하고,
+          여러 신호가 동시에 있으면 <strong>가장 구체적인</strong> 카테고리를 선택하세요.
+          어느 카테고리에도 맞지 않으면 <span class="enrich-cat enrich-cat-UNCATEGORIZABLE">UNCATEGORIZABLE</span>로 표시 후 메모에 근거를 작성합니다.
+        </p>
+      </div>
+
+      <div class="guide-section">
+        <h3>F1 Memorization Score — 회상(암기) 지표 (신규, v3)</h3>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+          모델 응답의 각 숫자를 5가지 출처로 분류한 뒤 <code>from_removed_data</code> 비율을 Memorization Score로 정의합니다.
+          회의에서 논의된 <strong>1million 현상</strong>(제거된 값을 모델이 회상하는 것)을 정량 지표로 잡기 위한 장치입니다.
+          각 metacognitive 응답 카드의 🧠 Memorization 행에서 확인할 수 있습니다.
+        </p>
+        <table>
+          <tr><th>분류</th><th>의미</th><th>해석</th></tr>
+          <tr><td><code>from_context</code></td><td>변환된 context에서 직접 읽음</td><td>정상 (추론 기반)</td></tr>
+          <tr><td><code>from_removed_data</code></td><td>제거/변형된 원본값을 회상</td><td>⚠ 암기 신호 — 점수에 반영</td></tr>
+          <tr><td><code>fabricated</code></td><td>아무 출처 없음</td><td>환각 (별도 분석)</td></tr>
+          <tr><td><code>common_constant</code></td><td>보편 상수 (tax_rate 0.21, 365 등)</td><td>점수 계산에서 제외</td></tr>
+          <tr><td><code>derived</code></td><td>context 값들의 산술 연산 결과</td><td>정상 (계산 결과)</td></tr>
+        </table>
+        <table style="margin-top:10px;">
+          <tr><th>Score 구간</th><th>해석</th></tr>
+          <tr><td><strong>0.000</strong></td><td>정상 (context 기반 추론, 회색 표시)</td></tr>
+          <tr><td><strong>0.001 ~ 0.05</strong></td><td>경미한 암기 흔적 (1~2개 값 회상)</td></tr>
+          <tr><td><strong>0.05 ~ 0.20</strong></td><td>유의미한 암기 — 표본이 작을 때 한 값으로도 진입</td></tr>
+          <tr><td><strong>&gt; 0.20</strong></td><td>명백한 암기 — 응답 재검토 필요 (빨강 표시)</td></tr>
+        </table>
+        <p style="font-size:11px;color:var(--text2);margin-top:8px;">
+          <strong>리뷰 체크:</strong> Memorization Score가 <code>&gt; 0</code>인 cell은 응답 코드 details를 열어
+          실제로 회상된 숫자가 context에 존재하지 않는지 확인합니다. 회의에서 논의된 test-2009(1million 사례)처럼
+          모델이 context 외부 값을 가져다 쓰는 케이스가 여기서 드러납니다.
+        </p>
+        <p style="font-size:11px;color:var(--text2);margin-top:4px;">
+          <strong>주의:</strong> 구 POT 프롬프트에선 대부분 <code>0.000 ~ 0.05</code> 수준으로 관측됩니다.
+          B1(<code>ic_cot_trace</code>) 실행 후 LOCATE 필드로 값 출처가 명시되면 측정 정확도가 상승할 것으로 예상합니다.
+        </p>
+      </div>
+
+      <div class="guide-section">
         <h3>Python Solution 읽는 법</h3>
         <p style="font-size:12px;color:var(--text2);">
           각 문제 하단의 Python Solution에서 <span style="color:var(--green);">● 초록색</span> 변수는 최종 답(answer)을 계산하는 데 사용되는 값이고,
