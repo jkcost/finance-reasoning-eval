@@ -154,35 +154,67 @@ def _extract_critical_values_from_solution(python_solution: str) -> Dict[str, An
     }
 
 
-def _render_error_overlay(qid: str, error_tags: Dict) -> str:
+def _render_error_overlay(
+    qid: str,
+    error_tags: Dict,
+    error_analyses: Dict = None,
+) -> str:
     """Render B1 Error Category overlay for the ORIGINAL Context response card.
 
-    Only applies to the original response card (v4 extension).
+    Shows:
+      - ⚠ Error Category + failure stage (heuristic)
+      - 🔍 Short note
+      - 💬 CoT refusal reason (what CoT trace said)
+      - 📝 LLM 상세 한글 해설 (summary / detailed_analysis / likely_cause / correct_approach)
     """
     tag = (error_tags or {}).get(qid)
-    if not tag:
+    analysis = (error_analyses or {}).get("analyses", {}).get(qid) if error_analyses else None
+    if not tag and not analysis:
         return ""
-    cat = tag.get("error_category", "?")
-    stage = tag.get("failure_stage", "?")
-    note = _esc(tag.get("note", ""))
-    cot_reason = _esc(tag.get("cot_refusal_reason") or "—")
-    return (
-        f'<div class="enrich-block">'
-        f'<div class="enrich-row">'
-        f'<span class="enrich-label">⚠ Error Category</span>'
-        f'<span class="enrich-cat enrich-err-{cat}">{cat}</span>'
-        f'<span class="enrich-conf">stage: {stage}</span>'
-        f"</div>"
-        f'<div class="enrich-row">'
-        f'<span class="enrich-label">🔍 Note</span>'
-        f'<span class="enrich-reason">{note}</span>'
-        f"</div>"
-        f'<div class="enrich-row">'
-        f'<span class="enrich-label">💬 CoT reason</span>'
-        f'<span class="enrich-reason">{cot_reason}</span>'
-        f"</div>"
-        f"</div>"
-    )
+
+    parts: list[str] = ['<div class="enrich-block">']
+
+    if tag:
+        cat = tag.get("error_category", "?")
+        stage = tag.get("failure_stage", "?")
+        note = _esc(tag.get("note", ""))
+        cot_reason = _esc(tag.get("cot_refusal_reason") or "—")
+        parts.append(
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">⚠ Error Category</span>'
+            f'<span class="enrich-cat enrich-err-{cat}">{cat}</span>'
+            f'<span class="enrich-conf">stage: {stage}</span>'
+            f"</div>"
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">🔍 Note</span>'
+            f'<span class="enrich-reason">{note}</span>'
+            f"</div>"
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">💬 CoT reason</span>'
+            f'<span class="enrich-reason">{cot_reason}</span>'
+            f"</div>"
+        )
+
+    if analysis:
+        etype = _esc(analysis.get("error_type", ""))
+        summary = _esc(analysis.get("summary", ""))
+        detailed = _esc(analysis.get("detailed_analysis", ""))
+        cause = _esc(analysis.get("likely_cause", ""))
+        approach = _esc(analysis.get("correct_approach", ""))
+        confidence = analysis.get("confidence", 0)
+        parts.append(
+            f'<div class="llm-analysis">'
+            f'<div class="llm-header">📝 LLM 한글 해설 <span class="llm-model">(gpt-4o-mini, conf={confidence:.2f})</span></div>'
+            f'<div class="llm-row"><span class="llm-label">유형</span><code>{etype}</code></div>'
+            f'<div class="llm-row"><span class="llm-label">요약</span><strong>{summary}</strong></div>'
+            f'<div class="llm-row"><span class="llm-label">상세</span>{detailed}</div>'
+            f'<div class="llm-row"><span class="llm-label">원인</span>{cause}</div>'
+            f'<div class="llm-row"><span class="llm-label">정답 접근</span>{approach}</div>'
+            f"</div>"
+        )
+
+    parts.append("</div>")
+    return "".join(parts)
 
 
 def _render_enrich_block(
@@ -192,15 +224,16 @@ def _render_enrich_block(
     enrich_reasons: Dict = None,
     enrich_mems: Dict = None,
     error_tags: Dict = None,
+    error_analyses: Dict = None,
 ) -> str:
     """Render A1 (reason category) + F1 (Memorization) + B1 (Error Category) overlays.
 
     - A1+F1: attached to the "metacognitive" card.
-    - B1 Error Category: attached to the "original" card (v4 extension).
+    - B1 Error Category + LLM 해설: attached to the "original" card (v4 extension).
     """
-    # v4: original card gets Error Category overlay
+    # v4: original card gets Error Category overlay + LLM 한글 해설
     if resp_id == "original":
-        return _render_error_overlay(qid, error_tags or {})
+        return _render_error_overlay(qid, error_tags or {}, error_analyses)
 
     if resp_id != "metacognitive":
         return ""
@@ -248,6 +281,7 @@ def _render_problem_card(
     enrich_reasons: Dict = None,
     enrich_mems: Dict = None,
     error_tags: Dict = None,
+    error_analyses: Dict = None,
 ) -> str:
     """Render a single problem review card."""
     qid = problem["question_id"]
@@ -401,7 +435,7 @@ def _render_problem_card(
                 ),
                 (
                     "cot_trace",
-                    "변환 Context (CoT trace) 🆕 v4",
+                    "변환 Context (POT + reasoning trace) 🆕 v4",
                     tdata.get("cot_trace_response", ""),
                     tdata.get("cot_trace_predicted", ""),
                     tdata.get("cot_trace_is_correct", False),
@@ -446,7 +480,8 @@ def _render_problem_card(
                         error_html = f'<div class="result-error">에러: {_esc(str(exec_err)[:80])}</div>'
 
                     enrich_html = _render_enrich_block(
-                        qid, ttype, resp_id, enrich_reasons, enrich_mems, error_tags
+                        qid, ttype, resp_id,
+                        enrich_reasons, enrich_mems, error_tags, error_analyses,
                     )
                     panel_content += (
                         f'<div class="response-card" style="border-color:{accent}60">'
@@ -566,6 +601,7 @@ def generate_html(
     enrich_reasons: Dict = None,
     enrich_mems: Dict = None,
     error_tags: Dict = None,
+    error_analyses: Dict = None,
 ) -> str:
     """Generate the full HTML review page.
 
@@ -588,7 +624,8 @@ def generate_html(
     cards_html = ""
     for problem in problems:
         cards_html += _render_problem_card(
-            problem, problem["index"], enrich_reasons, enrich_mems, error_tags
+            problem, problem["index"],
+            enrich_reasons, enrich_mems, error_tags, error_analyses,
         )
 
     # Coverage rows
@@ -847,6 +884,16 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .enrich-err-UNIT_ERROR {{ background: #f472b6; color: white; }}
 .enrich-err-OVER_REFUSAL {{ background: #dc2626; color: white; border: 1px solid #fbbf24; }}
 .enrich-err-HALLUCINATION {{ background: #7f1d1d; color: white; }}
+.enrich-err-LOGIC_ERROR {{ background: #a21caf; color: white; }}
+
+/* LLM analysis block (v4 extension for original context wrong answers) */
+.llm-analysis {{ margin-top: 10px; padding: 12px 14px; background: linear-gradient(135deg, #0f172a, #1e293b); border-radius: 6px; border-left: 3px solid #38bdf8; font-size: 12px; line-height: 1.6; }}
+.llm-header {{ color: #38bdf8; font-weight: 700; margin-bottom: 8px; font-size: 12px; }}
+.llm-model {{ color: var(--text2); font-weight: 400; font-size: 10px; margin-left: 6px; font-style: italic; }}
+.llm-row {{ margin: 5px 0; display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }}
+.llm-label {{ color: #94a3b8; font-size: 11px; font-weight: 600; min-width: 70px; flex-shrink: 0; letter-spacing: 0.03em; }}
+.llm-row code {{ font-size: 11px; background: #0b1220; color: #e2e8f0; padding: 2px 6px; border-radius: 3px; }}
+.llm-row strong {{ color: #fde68a; }}
 </style>
 </head>
 <body>
@@ -1793,6 +1840,12 @@ def main():
         help="JSON file with B1 Error Category tags per qid (original context)",
     )
     parser.add_argument(
+        "--enrich-error-analysis",
+        type=str,
+        default=None,
+        help="JSON file with LLM-generated Korean error analysis per qid",
+    )
+    parser.add_argument(
         "--start",
         type=int,
         default=None,
@@ -1972,12 +2025,26 @@ def main():
         else:
             logger.warning(f"Enrich(errors) 파일 없음: {et_path}")
 
+    error_analyses = None
+    if args.enrich_error_analysis:
+        ea_path = project_root / args.enrich_error_analysis
+        if not ea_path.is_absolute() and not ea_path.exists():
+            ea_path = results_dir / Path(args.enrich_error_analysis).name
+        if ea_path.exists():
+            with open(ea_path, "r", encoding="utf-8") as f:
+                error_analyses = json.load(f)
+            n = len(error_analyses.get("analyses", {}))
+            logger.info(f"Enrich(error-analysis) 로드: {ea_path} ({n}건 한글 해설)")
+        else:
+            logger.warning(f"Enrich(error-analysis) 파일 없음: {ea_path}")
+
     html_content = generate_html(
         data,
         preloaded_annotations=preloaded,
         enrich_reasons=enrich_reasons,
         enrich_mems=enrich_mems,
         error_tags=error_tags,
+        error_analyses=error_analyses,
     )
 
     if args.output:
