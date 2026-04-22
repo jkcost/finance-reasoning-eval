@@ -196,22 +196,7 @@ def _render_error_overlay(
         )
 
     if analysis:
-        etype = _esc(analysis.get("error_type", ""))
-        summary = _esc(analysis.get("summary", ""))
-        detailed = _esc(analysis.get("detailed_analysis", ""))
-        cause = _esc(analysis.get("likely_cause", ""))
-        approach = _esc(analysis.get("correct_approach", ""))
-        confidence = analysis.get("confidence", 0)
-        parts.append(
-            f'<div class="llm-analysis">'
-            f'<div class="llm-header">📝 LLM 한글 해설 <span class="llm-model">(gpt-4o-mini, conf={confidence:.2f})</span></div>'
-            f'<div class="llm-row"><span class="llm-label">유형</span><code>{etype}</code></div>'
-            f'<div class="llm-row"><span class="llm-label">요약</span><strong>{summary}</strong></div>'
-            f'<div class="llm-row"><span class="llm-label">상세</span>{detailed}</div>'
-            f'<div class="llm-row"><span class="llm-label">원인</span>{cause}</div>'
-            f'<div class="llm-row"><span class="llm-label">정답 접근</span>{approach}</div>'
-            f"</div>"
-        )
+        parts.append(_render_analysis_html(analysis))
 
     parts.append("</div>")
     return "".join(parts)
@@ -238,6 +223,33 @@ def _render_transformed_analysis(
     )
     if not analysis:
         return ""
+    return _render_analysis_html(analysis)
+
+
+def _verification_badge(analysis: Dict) -> str:
+    """Render verification badge based on python_solution cross-check."""
+    status = analysis.get("verification_status", "unverified")
+    note = _esc(analysis.get("verification_note", ""))
+    emoji_map = {
+        "consistent": ("✅", "#10b981", "python_solution과 일치"),
+        "needs_review": ("⚠", "#f59e0b", "부분 일치 — 검토 권장"),
+        "contradicts": ("❌", "#ef4444", "python_solution과 모순 — 수정 필요"),
+        "regenerated": ("♻", "#3b82f6", "python_solution 기반 재생성됨"),
+        "unverified": ("", "#6b7280", ""),
+    }
+    emoji, color, default_note = emoji_map.get(status, emoji_map["unverified"])
+    if not emoji:
+        return ""
+    tooltip_note = note or default_note
+    return (
+        f'<span class="llm-verify" '
+        f'style="background:{color}18;color:{color};border:1px solid {color}66;" '
+        f'title="{tooltip_note}">{emoji} {status}</span>'
+    )
+
+
+def _render_analysis_html(analysis: Dict) -> str:
+    """Shared analysis block renderer with verification badge."""
     etype = _esc(analysis.get("error_type", ""))
     summary = _esc(analysis.get("summary", ""))
     detailed = _esc(analysis.get("detailed_analysis", ""))
@@ -245,16 +257,27 @@ def _render_transformed_analysis(
     approach = _esc(analysis.get("correct_approach", ""))
     confidence = analysis.get("confidence", 0)
     is_refusal = analysis.get("is_refusal", False)
+    verify_note = _esc(analysis.get("verification_note", ""))
     title = "📝 LLM 한글 해설 (거부 분석)" if is_refusal else "📝 LLM 한글 해설 (오답 분석)"
+    verify_badge = _verification_badge(analysis)
+    verify_row = (
+        f'<div class="llm-row"><span class="llm-label">검증 사유</span>'
+        f'<span style="font-size:11px;color:var(--text2);">{verify_note}</span></div>'
+        if verify_note
+        else ""
+    )
     return (
         f'<div class="llm-analysis">'
         f'<div class="llm-header">{title} '
-        f'<span class="llm-model">(gpt-4o-mini, conf={confidence:.2f})</span></div>'
+        f'<span class="llm-model">(gpt-4o-mini, conf={confidence:.2f})</span>'
+        f"{verify_badge}"
+        f"</div>"
         f'<div class="llm-row"><span class="llm-label">유형</span><code>{etype}</code></div>'
         f'<div class="llm-row"><span class="llm-label">요약</span><strong>{summary}</strong></div>'
         f'<div class="llm-row"><span class="llm-label">상세</span>{detailed}</div>'
         f'<div class="llm-row"><span class="llm-label">원인</span>{cause}</div>'
         f'<div class="llm-row"><span class="llm-label">정답 접근</span>{approach}</div>'
+        f"{verify_row}"
         f"</div>"
     )
 
@@ -895,7 +918,7 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .guide-card p {{ font-size: 12px; color: var(--text2); margin-bottom: 4px; }}
 .guide-card .guide-tag {{ display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-right: 4px; }}
 .guide-card .example {{ font-size: 11px; background: var(--bg); padding: 6px 8px; border-radius: 4px; margin-top: 6px; font-family: monospace; white-space: pre-wrap; }}
-.prompt-comparison {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }}
+.prompt-comparison {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }}
 .prompt-card {{ background: var(--surface2); border-radius: 8px; padding: 12px; border-top: 3px solid; }}
 .prompt-card h4 {{ font-size: 12px; margin-bottom: 6px; }}
 .prompt-desc {{ font-size: 11px; color: var(--text2); margin-bottom: 8px; line-height: 1.5; }}
@@ -949,6 +972,7 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .llm-label {{ color: #94a3b8; font-size: 11px; font-weight: 600; min-width: 70px; flex-shrink: 0; letter-spacing: 0.03em; }}
 .llm-row code {{ font-size: 11px; background: #0b1220; color: #e2e8f0; padding: 2px 6px; border-radius: 3px; }}
 .llm-row strong {{ color: #fde68a; }}
+.llm-verify {{ display: inline-block; margin-left: 10px; padding: 1px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; vertical-align: middle; }}
 </style>
 </head>
 <body>
@@ -1281,6 +1305,49 @@ Do NOT guess, assume, or fabricate missing values.
 
 If the data is sufficient, generate the solution program normally.</pre>
             </details>
+          </div>
+          <div class="prompt-card" style="border-color:#ec4899;">
+            <h4 style="color:#ec4899;">4. 변환 Context + POT + Reasoning Trace 🆕 v4</h4>
+            <p class="prompt-desc">POT 코드 안에 <strong>IDENTIFY → LOCATE → CROSS-CHECK → MISSING → COMPUTE</strong> 5단계 reasoning trace를 주석으로 강제. POT 형식 유지(FinanceReasoning 호환)하면서도 "어떤 값을 왜 선택했는지" 추적 가능. IC 계열(권위 충돌/단위 불일치/기간 합산) 측정 타당성 향상 목적. 회의 4/15에서 확정된 POT 한계 대응책.</p>
+            <details class="prompt-details">
+              <summary>System Prompt 전문 보기</summary>
+              <pre class="prompt-pre">You are a financial expert. Follow this reasoning protocol rigorously:
+
+REASONING TRACE (write this as comments inside the solution BEFORE any computation):
+
+  1. IDENTIFY: List every numeric value needed to answer the question.
+  2. LOCATE: For each value, quote the exact source from the context
+     (field name, table cell, sentence) in a comment.
+  3. CROSS-CHECK: If multiple context mentions give different values for
+     the same metric, generate:
+```python
+def solution():
+    # IDENTIFY: need <metric1>, <metric2>, ...
+    # LOCATE: <metric1> from <loc1>
+    # CROSS-CHECK: <metric> has conflicting values <v1> vs <v2>
+    return "INSUFFICIENT_INFORMATION: conflict on <metric> — <v1> vs <v2>"
+```
+  4. MISSING: If a required value is absent, generate:
+```python
+def solution():
+    # IDENTIFY: need <metric1>, <metric2>, ...
+    # MISSING: <metric> not found in context
+    return "INSUFFICIENT_INFORMATION: <metric> not found in context"
+```
+  5. COMPUTE: Only when the trace passes all checks, write the actual
+     calculation AFTER the trace comments. Every value used must be
+     traceable to a LOCATE comment above.
+
+Target usage: IC-L2 (unit mismatch), IC-L3 (authority conflict),
+IC-L4 (period sum mismatch) variants where understanding WHICH value
+the model chose, and WHY, is essential to measurement validity.</pre>
+            </details>
+            <p style="font-size:10px;color:var(--text2);margin-top:6px;padding:4px 6px;background:#1a0a1a;border-radius:4px;border-left:2px solid #ec4899;">
+              <strong>트레이드오프:</strong> IC-L3 거부율 0% → 95%로 개선됐지만,
+              원본 정답률은 POT 75% → <strong style="color:#ef4444">CoT 0%</strong>로
+              <strong>over-refusal</strong> 발생 (Rule of 78 같은 암기 공식도 context에 없다고 거부).
+              Precision-Recall 트레이드오프 — 논문 Discussion 섹션 소재.
+            </p>
           </div>
         </div>
         <p style="font-size:11px;color:var(--text2);margin-top:8px;">
