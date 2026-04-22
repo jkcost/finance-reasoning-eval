@@ -154,7 +154,65 @@ def _extract_critical_values_from_solution(python_solution: str) -> Dict[str, An
     }
 
 
-def _render_problem_card(problem: Dict, idx: int) -> str:
+def _render_enrich_block(
+    qid: str,
+    ttype: str,
+    resp_id: str,
+    enrich_reasons: Dict = None,
+    enrich_mems: Dict = None,
+) -> str:
+    """Render the A1 (reason category) + F1 (Memorization) overlay.
+
+    Only attaches to the "metacognitive" response card, which is the source
+    of the refusal reason text and the basis of Memorization Score computation.
+    Returns empty string when no enrich data exists for this (qid, ttype) pair.
+    """
+    if resp_id != "metacognitive":
+        return ""
+    reason_meta = (enrich_reasons or {}).get(qid, {}).get(ttype)
+    mem_meta = (enrich_mems or {}).get(qid, {}).get(ttype)
+    if not reason_meta and not mem_meta:
+        return ""
+
+    parts: list[str] = []
+    if reason_meta:
+        cat = reason_meta.get("category", "?")
+        reason = _esc(reason_meta.get("reason", ""))
+        conf = _esc(reason_meta.get("confidence", ""))
+        parts.append(
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">📋 Reason</span>'
+            f'<span class="enrich-reason">{reason}</span>'
+            f"</div>"
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">🏷 Category</span>'
+            f'<span class="enrich-cat enrich-cat-{cat}">{cat}</span>'
+            f'<span class="enrich-conf">({conf})</span>'
+            f"</div>"
+        )
+    if mem_meta:
+        rate = float(mem_meta.get("memorization_rate", 0.0) or 0.0)
+        counts = mem_meta.get("counts", {}) or {}
+        total = int(mem_meta.get("total_values", 0) or 0)
+        from_removed = int(counts.get("from_removed_data", 0) or 0)
+        rate_color = "#ef4444" if rate > 0 else "#9ca3af"
+        parts.append(
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">🧠 Memorization</span>'
+            f'<span class="enrich-value" style="color:{rate_color}">{rate:.3f}</span>'
+            f'<span class="enrich-conf">'
+            f"from_removed={from_removed} / total={total}</span>"
+            f"</div>"
+        )
+    return '<div class="enrich-block">' + "".join(parts) + "</div>"
+
+
+def _render_problem_card(
+    problem: Dict,
+    idx: int,
+    enrich_reasons: Dict = None,
+    enrich_mems: Dict = None,
+) -> str:
     """Render a single problem review card."""
     qid = problem["question_id"]
     question = problem["question"]
@@ -340,6 +398,9 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                     if exec_err:
                         error_html = f'<div class="result-error">에러: {_esc(str(exec_err)[:80])}</div>'
 
+                    enrich_html = _render_enrich_block(
+                        qid, ttype, resp_id, enrich_reasons, enrich_mems
+                    )
                     panel_content += (
                         f'<div class="response-card" style="border-color:{accent}60">'
                         f'<div class="response-card-header" style="color:{accent}">{label}</div>'
@@ -352,6 +413,7 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                         f'<span class="result-gt" style="font-size:11px;">정답: {_esc(str(gt_val))}</span>'
                         f"</div>"
                         f"{error_html}"
+                        f"{enrich_html}"
                         f'<details class="model-response-details">'
                         f"<summary>응답 코드</summary>"
                         f'<pre class="model-response-content">{_esc(raw_resp[:1200])}</pre>'
@@ -451,13 +513,21 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
     </div>"""
 
 
-def generate_html(data: Dict, preloaded_annotations: Dict = None) -> str:
+def generate_html(
+    data: Dict,
+    preloaded_annotations: Dict = None,
+    enrich_reasons: Dict = None,
+    enrich_mems: Dict = None,
+) -> str:
     """Generate the full HTML review page.
 
     Args:
         data: Batch transformation result JSON.
         preloaded_annotations: Optional merged annotations to embed in HTML.
             Format: {qid: {ttype: {judgment, note, ...}}}
+        enrich_reasons: Optional {qid: {ttype: {reason, category, confidence}}}
+            overlay for the metacognitive response card.
+        enrich_mems: Optional {qid: {ttype: {memorization_rate, counts, total_values}}}.
     """
     metadata = data["metadata"]
     coverage = data["coverage_summary"]
@@ -469,7 +539,9 @@ def generate_html(data: Dict, preloaded_annotations: Dict = None) -> str:
     # Problem cards
     cards_html = ""
     for problem in problems:
-        cards_html += _render_problem_card(problem, problem["index"])
+        cards_html += _render_problem_card(
+            problem, problem["index"], enrich_reasons, enrich_mems
+        )
 
     # Coverage rows
     coverage_rows = ""
@@ -702,6 +774,22 @@ h1 {{ font-size: 22px; font-weight: 600; }}
   .summary-grid {{ grid-template-columns: repeat(3, 1fr); }}
   .guide-grid {{ grid-template-columns: 1fr; }}
 }}
+
+/* Enrich overlay — A1 (reason category) + F1 (Memorization) */
+.enrich-block {{ margin-top: 10px; padding: 10px 12px; background: var(--bg); border-radius: 6px; border: 1px dashed var(--border); font-size: 12px; }}
+.enrich-row {{ display: flex; align-items: center; gap: 8px; margin: 4px 0; flex-wrap: wrap; }}
+.enrich-label {{ color: var(--text2); font-size: 11px; min-width: 110px; font-weight: 600; flex-shrink: 0; }}
+.enrich-value {{ color: var(--text); font-family: monospace; font-weight: 600; }}
+.enrich-reason {{ color: var(--text); font-size: 12px; line-height: 1.5; flex: 1; min-width: 0; }}
+.enrich-conf {{ color: var(--text2); font-size: 10px; font-style: italic; margin-left: auto; }}
+.enrich-cat {{ padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: monospace; color: white; font-weight: 600; }}
+.enrich-cat-MISSING_REQUIRED_VALUE {{ background: #3b82f6; }}
+.enrich-cat-MISSING_SILENT {{ background: #06b6d4; }}
+.enrich-cat-CONFLICTING_VALUES {{ background: #ef4444; }}
+.enrich-cat-UNIT_AMBIGUITY {{ background: #8b5cf6; }}
+.enrich-cat-TEMPORAL_MISMATCH {{ background: #a855f7; }}
+.enrich-cat-UNDERSPECIFIED {{ background: #6b7280; }}
+.enrich-cat-UNCATEGORIZABLE {{ background: #111827; border: 1px solid #ef4444; }}
 </style>
 </head>
 <body>
@@ -1542,6 +1630,30 @@ def main():
         default=None,
         help="Evaluation results JSON (adds model responses to review)",
     )
+    parser.add_argument(
+        "--enrich-reasons",
+        type=str,
+        default=None,
+        help="JSON file with A1 reason categories (output of auto_tag_reason_categories.py)",
+    )
+    parser.add_argument(
+        "--enrich-memorization",
+        type=str,
+        default=None,
+        help="JSON file with F1 Memorization Score per (qid, transformation_type)",
+    )
+    parser.add_argument(
+        "--start",
+        type=int,
+        default=None,
+        help="Slice start index of problems (inclusive)",
+    )
+    parser.add_argument(
+        "--end",
+        type=int,
+        default=None,
+        help="Slice end index of problems (exclusive)",
+    )
     args = parser.parse_args()
 
     project_root = Path(__file__).parent.parent
@@ -1557,6 +1669,15 @@ def main():
 
     logger.info(f"로드: {input_path}")
     logger.info(f"문제 수: {len(data['problems'])}")
+
+    # Optional --start/--end slicing of problem set
+    if args.start is not None or args.end is not None:
+        start = args.start or 0
+        end = args.end if args.end is not None else len(data["problems"])
+        data["problems"] = data["problems"][start:end]
+        # Update metadata range so output filename + coverage stats reflect slice
+        data.setdefault("metadata", {})["range"] = [start, end]
+        logger.info(f"범위 제한 적용: [{start}, {end}) → {len(data['problems'])}문제")
 
     # Load pre-merged annotations if provided
     preloaded = None
@@ -1659,7 +1780,42 @@ def main():
 
             logger.info(f"추가 Eval 로드: {eval_name} ({injected}건)")
 
-    html_content = generate_html(data, preloaded_annotations=preloaded)
+    # Load enrich overlays (A1 reason categories + F1 Memorization Score)
+    enrich_reasons = None
+    enrich_mems = None
+    if args.enrich_reasons:
+        er_path = project_root / args.enrich_reasons
+        if not er_path.is_absolute() and not er_path.exists():
+            er_path = results_dir / Path(args.enrich_reasons).name
+        if er_path.exists():
+            with open(er_path, "r", encoding="utf-8") as f:
+                enrich_reasons = json.load(f)
+            logger.info(
+                f"Enrich(reasons) 로드: {er_path} "
+                f"({sum(len(v) for v in enrich_reasons.values())} cells)"
+            )
+        else:
+            logger.warning(f"Enrich(reasons) 파일 없음: {er_path}")
+    if args.enrich_memorization:
+        em_path = project_root / args.enrich_memorization
+        if not em_path.is_absolute() and not em_path.exists():
+            em_path = results_dir / Path(args.enrich_memorization).name
+        if em_path.exists():
+            with open(em_path, "r", encoding="utf-8") as f:
+                enrich_mems = json.load(f)
+            logger.info(
+                f"Enrich(memorization) 로드: {em_path} "
+                f"({sum(len(v) for v in enrich_mems.values())} cells)"
+            )
+        else:
+            logger.warning(f"Enrich(memorization) 파일 없음: {em_path}")
+
+    html_content = generate_html(
+        data,
+        preloaded_annotations=preloaded,
+        enrich_reasons=enrich_reasons,
+        enrich_mems=enrich_mems,
+    )
 
     if args.output:
         output_name = args.output
