@@ -234,7 +234,8 @@ def _verification_badge(analysis: Dict) -> str:
         "consistent": ("✅", "#10b981", "python_solution과 일치"),
         "needs_review": ("⚠", "#f59e0b", "부분 일치 — 검토 권장"),
         "contradicts": ("❌", "#ef4444", "python_solution과 모순 — 수정 필요"),
-        "regenerated": ("♻", "#3b82f6", "python_solution 기반 재생성됨"),
+        "regenerated": ("♻", "#3b82f6", "python_solution 기반 재생성됨 (v1)"),
+        "regenerated_v2": ("✨", "#8b5cf6", "v2 프롬프트 재생성: 변환 맥락 + 거부/오답 분기"),
         "unverified": ("", "#6b7280", ""),
     }
     emoji, color, default_note = emoji_map.get(status, emoji_map["unverified"])
