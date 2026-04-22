@@ -217,6 +217,48 @@ def _render_error_overlay(
     return "".join(parts)
 
 
+def _render_transformed_analysis(
+    qid: str,
+    ttype: str,
+    strategy: str,
+    transformed_analyses: Dict = None,
+) -> str:
+    """Render LLM 한글 해설 for a transformed-context response card.
+
+    `transformed_analyses` shape: {qid: {ttype: {strategy: analysis}}}
+    Applies to "standard", "metacognitive", and "cot_trace" cards.
+    """
+    if not transformed_analyses:
+        return ""
+    analysis = (
+        transformed_analyses.get("analyses", {})
+        .get(qid, {})
+        .get(ttype, {})
+        .get(strategy)
+    )
+    if not analysis:
+        return ""
+    etype = _esc(analysis.get("error_type", ""))
+    summary = _esc(analysis.get("summary", ""))
+    detailed = _esc(analysis.get("detailed_analysis", ""))
+    cause = _esc(analysis.get("likely_cause", ""))
+    approach = _esc(analysis.get("correct_approach", ""))
+    confidence = analysis.get("confidence", 0)
+    is_refusal = analysis.get("is_refusal", False)
+    title = "📝 LLM 한글 해설 (거부 분석)" if is_refusal else "📝 LLM 한글 해설 (오답 분석)"
+    return (
+        f'<div class="llm-analysis">'
+        f'<div class="llm-header">{title} '
+        f'<span class="llm-model">(gpt-4o-mini, conf={confidence:.2f})</span></div>'
+        f'<div class="llm-row"><span class="llm-label">유형</span><code>{etype}</code></div>'
+        f'<div class="llm-row"><span class="llm-label">요약</span><strong>{summary}</strong></div>'
+        f'<div class="llm-row"><span class="llm-label">상세</span>{detailed}</div>'
+        f'<div class="llm-row"><span class="llm-label">원인</span>{cause}</div>'
+        f'<div class="llm-row"><span class="llm-label">정답 접근</span>{approach}</div>'
+        f"</div>"
+    )
+
+
 def _render_enrich_block(
     qid: str,
     ttype: str,
@@ -225,21 +267,30 @@ def _render_enrich_block(
     enrich_mems: Dict = None,
     error_tags: Dict = None,
     error_analyses: Dict = None,
+    transformed_analyses: Dict = None,
 ) -> str:
     """Render A1 (reason category) + F1 (Memorization) + B1 (Error Category) overlays.
 
     - A1+F1: attached to the "metacognitive" card.
     - B1 Error Category + LLM 해설: attached to the "original" card (v4 extension).
+    - Transformed LLM 해설: attached to "standard" / "metacognitive" / "cot_trace" cards.
     """
     # v4: original card gets Error Category overlay + LLM 한글 해설
     if resp_id == "original":
         return _render_error_overlay(qid, error_tags or {}, error_analyses)
 
+    # v4+: transformed cards get their own LLM 한글 해설
+    if resp_id in ("standard", "cot_trace"):
+        return _render_transformed_analysis(qid, ttype, resp_id, transformed_analyses)
+
     if resp_id != "metacognitive":
         return ""
+
+    # Metacognitive card: A1 + F1 오버레이 + (추가로) LLM 한글 해설
+    llm_analysis = _render_transformed_analysis(qid, ttype, "metacognitive", transformed_analyses)
     reason_meta = (enrich_reasons or {}).get(qid, {}).get(ttype)
     mem_meta = (enrich_mems or {}).get(qid, {}).get(ttype)
-    if not reason_meta and not mem_meta:
+    if not reason_meta and not mem_meta and not llm_analysis:
         return ""
 
     parts: list[str] = []
@@ -272,7 +323,7 @@ def _render_enrich_block(
             f"from_removed={from_removed} / total={total}</span>"
             f"</div>"
         )
-    return '<div class="enrich-block">' + "".join(parts) + "</div>"
+    return '<div class="enrich-block">' + "".join(parts) + "</div>" + llm_analysis
 
 
 def _render_problem_card(
@@ -282,6 +333,7 @@ def _render_problem_card(
     enrich_mems: Dict = None,
     error_tags: Dict = None,
     error_analyses: Dict = None,
+    transformed_analyses: Dict = None,
 ) -> str:
     """Render a single problem review card."""
     qid = problem["question_id"]
@@ -481,7 +533,8 @@ def _render_problem_card(
 
                     enrich_html = _render_enrich_block(
                         qid, ttype, resp_id,
-                        enrich_reasons, enrich_mems, error_tags, error_analyses,
+                        enrich_reasons, enrich_mems,
+                        error_tags, error_analyses, transformed_analyses,
                     )
                     panel_content += (
                         f'<div class="response-card" style="border-color:{accent}60">'
@@ -602,6 +655,7 @@ def generate_html(
     enrich_mems: Dict = None,
     error_tags: Dict = None,
     error_analyses: Dict = None,
+    transformed_analyses: Dict = None,
 ) -> str:
     """Generate the full HTML review page.
 
@@ -625,7 +679,8 @@ def generate_html(
     for problem in problems:
         cards_html += _render_problem_card(
             problem, problem["index"],
-            enrich_reasons, enrich_mems, error_tags, error_analyses,
+            enrich_reasons, enrich_mems,
+            error_tags, error_analyses, transformed_analyses,
         )
 
     # Coverage rows
@@ -1843,7 +1898,13 @@ def main():
         "--enrich-error-analysis",
         type=str,
         default=None,
-        help="JSON file with LLM-generated Korean error analysis per qid",
+        help="JSON file with LLM-generated Korean error analysis per qid (original context)",
+    )
+    parser.add_argument(
+        "--enrich-transformed-analysis",
+        type=str,
+        default=None,
+        help="JSON file with LLM-generated Korean analysis per (qid, ttype, strategy) for transformed responses",
     )
     parser.add_argument(
         "--start",
@@ -2038,6 +2099,23 @@ def main():
         else:
             logger.warning(f"Enrich(error-analysis) 파일 없음: {ea_path}")
 
+    transformed_analyses = None
+    if args.enrich_transformed_analysis:
+        ta_path = project_root / args.enrich_transformed_analysis
+        if not ta_path.is_absolute() and not ta_path.exists():
+            ta_path = results_dir / Path(args.enrich_transformed_analysis).name
+        if ta_path.exists():
+            with open(ta_path, "r", encoding="utf-8") as f:
+                transformed_analyses = json.load(f)
+            n = sum(
+                1 for per_q in transformed_analyses.get("analyses", {}).values()
+                for per_t in per_q.values()
+                for _ in per_t.values()
+            )
+            logger.info(f"Enrich(transformed-analysis) 로드: {ta_path} ({n}건 해설)")
+        else:
+            logger.warning(f"Enrich(transformed-analysis) 파일 없음: {ta_path}")
+
     html_content = generate_html(
         data,
         preloaded_annotations=preloaded,
@@ -2045,6 +2123,7 @@ def main():
         enrich_mems=enrich_mems,
         error_tags=error_tags,
         error_analyses=error_analyses,
+        transformed_analyses=transformed_analyses,
     )
 
     if args.output:
