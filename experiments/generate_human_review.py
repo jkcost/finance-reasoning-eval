@@ -154,19 +154,54 @@ def _extract_critical_values_from_solution(python_solution: str) -> Dict[str, An
     }
 
 
+def _render_error_overlay(qid: str, error_tags: Dict) -> str:
+    """Render B1 Error Category overlay for the ORIGINAL Context response card.
+
+    Only applies to the original response card (v4 extension).
+    """
+    tag = (error_tags or {}).get(qid)
+    if not tag:
+        return ""
+    cat = tag.get("error_category", "?")
+    stage = tag.get("failure_stage", "?")
+    note = _esc(tag.get("note", ""))
+    cot_reason = _esc(tag.get("cot_refusal_reason") or "—")
+    return (
+        f'<div class="enrich-block">'
+        f'<div class="enrich-row">'
+        f'<span class="enrich-label">⚠ Error Category</span>'
+        f'<span class="enrich-cat enrich-err-{cat}">{cat}</span>'
+        f'<span class="enrich-conf">stage: {stage}</span>'
+        f"</div>"
+        f'<div class="enrich-row">'
+        f'<span class="enrich-label">🔍 Note</span>'
+        f'<span class="enrich-reason">{note}</span>'
+        f"</div>"
+        f'<div class="enrich-row">'
+        f'<span class="enrich-label">💬 CoT reason</span>'
+        f'<span class="enrich-reason">{cot_reason}</span>'
+        f"</div>"
+        f"</div>"
+    )
+
+
 def _render_enrich_block(
     qid: str,
     ttype: str,
     resp_id: str,
     enrich_reasons: Dict = None,
     enrich_mems: Dict = None,
+    error_tags: Dict = None,
 ) -> str:
-    """Render the A1 (reason category) + F1 (Memorization) overlay.
+    """Render A1 (reason category) + F1 (Memorization) + B1 (Error Category) overlays.
 
-    Only attaches to the "metacognitive" response card, which is the source
-    of the refusal reason text and the basis of Memorization Score computation.
-    Returns empty string when no enrich data exists for this (qid, ttype) pair.
+    - A1+F1: attached to the "metacognitive" card.
+    - B1 Error Category: attached to the "original" card (v4 extension).
     """
+    # v4: original card gets Error Category overlay
+    if resp_id == "original":
+        return _render_error_overlay(qid, error_tags or {})
+
     if resp_id != "metacognitive":
         return ""
     reason_meta = (enrich_reasons or {}).get(qid, {}).get(ttype)
@@ -212,6 +247,7 @@ def _render_problem_card(
     idx: int,
     enrich_reasons: Dict = None,
     enrich_mems: Dict = None,
+    error_tags: Dict = None,
 ) -> str:
     """Render a single problem review card."""
     qid = problem["question_id"]
@@ -363,6 +399,17 @@ def _render_problem_card(
                     tdata.get("metacognitive_execution_error", ""),
                     "#a78bfa",
                 ),
+                (
+                    "cot_trace",
+                    "변환 Context (CoT trace) 🆕 v4",
+                    tdata.get("cot_trace_response", ""),
+                    tdata.get("cot_trace_predicted", ""),
+                    tdata.get("cot_trace_is_correct", False),
+                    tdata.get("cot_trace_case_type", 0),
+                    tdata.get("cot_trace_response_type", ""),
+                    tdata.get("cot_trace_execution_error", ""),
+                    "#ec4899",
+                ),
             ]
 
             has_any_response = any(cfg[2] for cfg in response_configs)
@@ -399,7 +446,7 @@ def _render_problem_card(
                         error_html = f'<div class="result-error">에러: {_esc(str(exec_err)[:80])}</div>'
 
                     enrich_html = _render_enrich_block(
-                        qid, ttype, resp_id, enrich_reasons, enrich_mems
+                        qid, ttype, resp_id, enrich_reasons, enrich_mems, error_tags
                     )
                     panel_content += (
                         f'<div class="response-card" style="border-color:{accent}60">'
@@ -518,6 +565,7 @@ def generate_html(
     preloaded_annotations: Dict = None,
     enrich_reasons: Dict = None,
     enrich_mems: Dict = None,
+    error_tags: Dict = None,
 ) -> str:
     """Generate the full HTML review page.
 
@@ -540,7 +588,7 @@ def generate_html(
     cards_html = ""
     for problem in problems:
         cards_html += _render_problem_card(
-            problem, problem["index"], enrich_reasons, enrich_mems
+            problem, problem["index"], enrich_reasons, enrich_mems, error_tags
         )
 
     # Coverage rows
@@ -790,6 +838,15 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .enrich-cat-TEMPORAL_MISMATCH {{ background: #a855f7; }}
 .enrich-cat-UNDERSPECIFIED {{ background: #6b7280; }}
 .enrich-cat-UNCATEGORIZABLE {{ background: #111827; border: 1px solid #ef4444; }}
+/* Error Category (B1 extension) — warmer palette to distinguish from A1 */
+.enrich-err-OK {{ background: #10b981; color: white; }}
+.enrich-err-FORMULA_ERROR {{ background: #f97316; color: white; }}
+.enrich-err-EXTRACTION_ERROR {{ background: #f59e0b; color: white; }}
+.enrich-err-CALCULATION_ERROR {{ background: #eab308; color: white; }}
+.enrich-err-MISUNDERSTANDING {{ background: #ef4444; color: white; }}
+.enrich-err-UNIT_ERROR {{ background: #f472b6; color: white; }}
+.enrich-err-OVER_REFUSAL {{ background: #dc2626; color: white; border: 1px solid #fbbf24; }}
+.enrich-err-HALLUCINATION {{ background: #7f1d1d; color: white; }}
 </style>
 </head>
 <body>
@@ -1730,6 +1787,12 @@ def main():
         help="JSON file with F1 Memorization Score per (qid, transformation_type)",
     )
     parser.add_argument(
+        "--enrich-errors",
+        type=str,
+        default=None,
+        help="JSON file with B1 Error Category tags per qid (original context)",
+    )
+    parser.add_argument(
         "--start",
         type=int,
         default=None,
@@ -1897,11 +1960,24 @@ def main():
         else:
             logger.warning(f"Enrich(memorization) 파일 없음: {em_path}")
 
+    error_tags = None
+    if args.enrich_errors:
+        et_path = project_root / args.enrich_errors
+        if not et_path.is_absolute() and not et_path.exists():
+            et_path = results_dir / Path(args.enrich_errors).name
+        if et_path.exists():
+            with open(et_path, "r", encoding="utf-8") as f:
+                error_tags = json.load(f)
+            logger.info(f"Enrich(errors) 로드: {et_path} ({len(error_tags)} qids)")
+        else:
+            logger.warning(f"Enrich(errors) 파일 없음: {et_path}")
+
     html_content = generate_html(
         data,
         preloaded_annotations=preloaded,
         enrich_reasons=enrich_reasons,
         enrich_mems=enrich_mems,
+        error_tags=error_tags,
     )
 
     if args.output:
