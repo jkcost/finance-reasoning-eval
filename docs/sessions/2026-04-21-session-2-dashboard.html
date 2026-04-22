@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Session 2 Dashboard · 2026-04-21</title>
+<style>
+  :root {
+    --ok: #10b981;
+    --warn: #f59e0b;
+    --fail: #ef4444;
+    --defer: #6b7280;
+    --muted: #9ca3af;
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --ink: #111827;
+    --sub: #4b5563;
+    --line: #e5e7eb;
+    --accent: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', 'Apple SD Gothic Neo', sans-serif; margin: 0; background: var(--bg); color: var(--ink); line-height: 1.55; }
+  header.topbar { background: var(--ink); color: white; padding: 20px 32px; position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+  header.topbar h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: -0.01em; }
+  header.topbar .meta { color: #9ca3af; font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; }
+  main { padding: 32px; max-width: 1200px; margin: 0 auto; }
+  section { background: var(--card); border-radius: 10px; padding: 24px; margin-bottom: 20px; border: 1px solid var(--line); }
+  section h2 { margin: 0 0 14px; font-size: 17px; display: flex; align-items: center; gap: 10px; }
+  section h2 .num { color: var(--muted); font-family: 'SF Mono', monospace; font-size: 13px; }
+  section p, section li { color: var(--sub); font-size: 14px; }
+  .chip { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-family: 'SF Mono', monospace; color: white; background: var(--defer); letter-spacing: 0.02em; }
+  .chip.ok { background: var(--ok); }
+  .chip.warn { background: var(--warn); }
+  .chip.fail { background: var(--fail); }
+  .chip.defer { background: var(--defer); }
+  .chip.accent { background: var(--accent); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .kpi { background: #f9fafb; border-radius: 8px; padding: 16px; border-left: 4px solid var(--accent); }
+  .kpi .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi .value { font-size: 24px; font-weight: 700; color: var(--ink); margin: 4px 0; }
+  .kpi .note { font-size: 12px; color: var(--sub); }
+  .checklist li { list-style: none; padding: 12px 14px; margin: 6px 0; background: #f9fafb; border-radius: 6px; display: flex; gap: 12px; align-items: flex-start; border-left: 3px solid var(--line); }
+  .checklist li.ok { border-left-color: var(--ok); }
+  .checklist li.warn { border-left-color: var(--warn); }
+  .checklist li.defer { border-left-color: var(--defer); }
+  .checklist li.fail { border-left-color: var(--fail); }
+  .checklist .item-title { font-weight: 600; color: var(--ink); font-size: 14px; }
+  .checklist .item-desc { color: var(--sub); font-size: 13px; margin-top: 4px; }
+  .checklist .item-evidence { color: var(--muted); font-size: 12px; margin-top: 6px; font-family: 'SF Mono', monospace; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #f9fafb; color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; font-weight: 600; }
+  code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: 'SF Mono', monospace; color: var(--ink); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .phase-card { background: #f9fafb; padding: 14px 16px; border-radius: 6px; border-left: 4px solid var(--accent); margin-bottom: 10px; }
+  .phase-card h3 { margin: 0 0 6px; font-size: 14px; }
+  .phase-card .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0; overflow: hidden; }
+  .phase-card .bar .fill { height: 100%; background: var(--ok); border-radius: 3px; }
+  .phase-card small { color: var(--muted); font-size: 11px; }
+  ul.plain { list-style: none; padding: 0; }
+  ul.plain li { padding: 6px 0; color: var(--sub); font-size: 13px; }
+  ul.plain li::before { content: "→ "; color: var(--muted); }
+  .pr-row { display: flex; gap: 12px; align-items: center; padding: 10px 14px; background: #f9fafb; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+  .pr-row .num { font-family: 'SF Mono', monospace; color: var(--accent); font-weight: 600; }
+  .finding { padding: 12px 16px; background: #fefce8; border-left: 3px solid var(--warn); border-radius: 4px; margin: 10px 0; font-size: 13px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Session 2 Dashboard — 4/15 회의 이행 현황</h1>
+  <div class="meta">
+    <span>📅 2026-04-21</span>
+    <span>⏱ D-45 to CIKM Short (6/6)</span>
+    <span>🧭 w3-prep-2026-04-21 branch</span>
+    <span>🤝 원본 회의록: <a href="../meetings/2026-04-15-team-sync.md">2026-04-15-team-sync.md</a></span>
+  </div>
+</header>
+
+<main>
+
+<section>
+  <h2>🎯 세션 한눈에 보기</h2>
+  <div class="grid-3">
+    <div class="kpi">
+      <div class="label">Tasks 완료</div>
+      <div class="value">22 / 22</div>
+      <div class="note">자동화 가능 범위 내 100%</div>
+    </div>
+    <div class="kpi">
+      <div class="label">신규 스크립트 + 문서</div>
+      <div class="value">9 + 4</div>
+      <div class="note">experiments/*.py, docs/**/*.md</div>
+    </div>
+    <div class="kpi">
+      <div class="label">오픈 PR</div>
+      <div class="value">3개</div>
+      <div class="note">#2, #3, #4 전부 feat 브랜치 기반</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Reason 샘플 확보</div>
+      <div class="value">287 / 180</div>
+      <div class="note">R4 solvable filter 적용 후 (목표 초과)</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Hard Example validated</div>
+      <div class="value">75 / 24</div>
+      <div class="note">목표 3배, 60% 성공률</div>
+    </div>
+    <div class="kpi">
+      <div class="label">IC 계열 Memorization</div>
+      <div class="value">0.10~0.14</div>
+      <div class="note">1million 현상 정량 증거 (RQ-B)</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>✅ 4/15 회의 Decisions 이행 체크</h2>
+  <ul class="checklist">
+    <li class="ok">
+      <span class="chip ok">Done</span>
+      <div>
+        <div class="item-title">D1. 연구 앵글 확장 — 판정 이유 카테고리화(A1) + Hard Example(A2)</div>
+        <div class="item-desc">두 축 모두 end-to-end 파이프라인 구현. A1은 기존 데이터(287 reason) 재활용, A2는 238문제 전수 실행 완료.</div>
+        <div class="item-evidence">experiments/extract_existing_reasons.py · generate_reason_coding_workbook.py · extract_ic_l1_l2_candidates.py · validate_hard_example.py · generate_hard_example_review.py</div>
+      </div>
+    </li>
+    <li class="ok">
+      <span class="chip ok">Done</span>
+      <div>
+        <div class="item-title">D2. POT 한계 → CoT 측정 도구 전환</div>
+        <div class="item-desc"><code>ic_cot_trace</code> 프롬프트 전략 등록 (7번째). IDENTIFY→LOCATE→CROSS-CHECK→MISSING→COMPUTE 5단계로 값 선택 이유를 명시적 노출. 기존 6전략 regression 없음.</div>
+        <div class="item-evidence">experiments/run_metacognitive_experiment.py (PROMPT_SYSTEMS["ic_cot_trace"])</div>
+      </div>
+    </li>
+    <li class="ok">
+      <span class="chip ok">Done</span>
+      <div>
+        <div class="item-title">D3. 1million 암기 현상 → RQ-B 정량 증거</div>
+        <div class="item-desc">Value Provenance Classifier 통합 스크립트 구현 + R4 solvable 필터. smoke 실행에서 IC 계열 Memorization Score 0.10~0.14 관측.</div>
+        <div class="item-evidence">experiments/compute_memorization_score.py · evaluation/reasoning_trace_analyzer.py (재사용)</div>
+      </div>
+    </li>
+    <li class="ok">
+      <span class="chip ok">Done</span>
+      <div>
+        <div class="item-title">D4. 원본 오답 제외 정책 (R4)</div>
+        <div class="item-desc">공통 유틸 <code>_eval_io.solvable_qids</code> / <code>qid_in_solvable</code>로 모든 F/C 스크립트에 내장. str-normalized 비교로 int/str qid 혼재 silent drop 방지.</div>
+        <div class="item-evidence">experiments/_eval_io.py · docs/memory/feedback_exclude_baseline_wrong.md</div>
+      </div>
+    </li>
+    <li class="warn">
+      <span class="chip warn">Note</span>
+      <div>
+        <div class="item-title">D5. 난이도 레벨 세분화 여지</div>
+        <div class="item-desc">현재는 단일 레벨. EA-partial 내부 1/3/5 삭제 등 세분화는 Plan의 Open Questions에 기록. 다음 미팅 안건으로.</div>
+        <div class="item-evidence">docs/plans/2026-04-21-001-feat-cikm-short-execution-plan.md (Deferred to Implementation)</div>
+      </div>
+    </li>
+    <li class="ok">
+      <span class="chip ok">Done</span>
+      <div>
+        <div class="item-title">D6. IC L3 기대 응답 재정의</div>
+        <div class="item-desc"><code>ic_cot_trace</code> 프롬프트가 "두 값이 공존 → INSUFFICIENT_INFORMATION: conflict on [metric] — [v1] vs [v2]" 형식을 명시적으로 지시.</div>
+        <div class="item-evidence">POT_SYSTEM_IC_COT_TRACE, COT_SYSTEM_IC_COT_TRACE</div>
+      </div>
+    </li>
+    <li class="ok">
+      <span class="chip ok">Done</span>
+      <div>
+        <div class="item-title">D7. 타임라인 유지 (5월 CIKM Short → 8월 AAAI)</div>
+        <div class="item-desc">Plan에 G1~G4 (논문 작성) 포함, W4~W8 주차별 계획 + 4p 초과 리스크 mitigation.</div>
+        <div class="item-evidence">docs/plans/2026-04-21-001-feat-cikm-short-execution-plan.md (Phased Delivery)</div>
+      </div>
+    </li>
+  </ul>
+</section>
+
+<section>
+  <h2>📋 4/15 회의 Action Items 이행 체크</h2>
+  <ul class="checklist">
+    <li class="ok">
+      <span class="chip ok">Done</span>
+      <div>
+        <div class="item-title">AI-1 (진규). 판정 이유 프롬프트 실험 + HTML</div>
+        <div class="item-desc">원래 계획: 10문제 × 6변형 × 3모델 재실행. 실제 수행: 기존 <code>eval_metacognitive.json</code> (238문제 × gpt-4o-mini) 재활용 → 287 reason 확보 (R4 필터 적용) → HTML workbook 생성.</div>
+        <div class="item-evidence">reasons_solvable.json · reason_coding_workbook_solvable.html</div>
+      </div>
+    </li>
+    <li class="defer">
+      <span class="chip defer">Deferred</span>
+      <div>
+        <div class="item-title">AI-2 (진규). 로컬 모델 제외 먼저 실행 → 로컬 합치기</div>
+        <div class="item-desc">GPU 의존성 분리 결정. backlog에 재개 플랜 + 진수에게 보낼 메시지 템플릿 보존. 코드는 PR-A #3에 이미 병합 대기.</div>
+        <div class="item-evidence">docs/backlog/local_model_experiment.md</div>
+      </div>
+    </li>
+    <li class="defer">
+      <span class="chip defer">Deferred</span>
+      <div>
+        <div class="item-title">AI-3 (우익). 로컬 모델 실행 지원</div>
+        <div class="item-desc">AI-2와 함께 DEFERRED. 진수 GPU 가용 일정 수신 시 재개.</div>
+        <div class="item-evidence">docs/backlog/local_model_experiment.md#재개-시-해야-할-일</div>
+      </div>
+    </li>
+    <li class="warn">
+      <span class="chip warn">Ready</span>
+      <div>
+        <div class="item-title">AI-4 (전원). 판정 이유 4 카테고리 × 변형 6 유형 매트릭스 분석 + 카테고리 확정 미팅</div>
+        <div class="item-desc">v0 카테고리 6개 + Cohen's Kappa ≥0.6 프로토콜 완비. 2인 코딩 워크북 URL 분배 준비. C2 sanity check 결과 반영된 v0.1 제안 포함. <strong>다음 주간 회의까지 2인 코딩 완료 필요</strong>.</div>
+        <div class="item-evidence">docs/memory/project_reason_categories_draft.md · experiments/merge_reason_codings.py (Kappa)</div>
+      </div>
+    </li>
+    <li class="ok">
+      <span class="chip ok">Done</span>
+      <div>
+        <div class="item-title">AI-5 (진규). 원본 오답 문제 분석 vs 제외 판단</div>
+        <div class="item-desc">Phase A 원본 컨텍스트 오답 분석 보고서 작성 + <code>feedback_exclude_baseline_wrong.md</code>로 정책 확정. F/C 스크립트에 R4 필터 내장.</div>
+        <div class="item-evidence">experiments/phase_a_error_analysis_report.md · docs/memory/feedback_exclude_baseline_wrong.md</div>
+      </div>
+    </li>
+  </ul>
+</section>
+
+<section>
+  <h2>🔬 Phase별 실행 상태</h2>
+  <div class="phase-card">
+    <h3>🔴 Phase A — 데이터 인프라 <span class="chip warn">Partial</span></h3>
+    <div class="bar"><div class="fill" style="width: 50%; background: #f59e0b;"></div></div>
+    <small>A1 (reason 수집): 기존 데이터 활용으로 substitute 완료 · A2 (balanced 실험): API 비용 승인 후 실행 대기</small>
+  </div>
+  <div class="phase-card">
+    <h3>🔴 Phase B — 측정 도구 신뢰성 <span class="chip warn">Partial</span></h3>
+    <div class="bar"><div class="fill" style="width: 50%; background: #f59e0b;"></div></div>
+    <small>B1 (<code>ic_cot_trace</code> 전략 추가): 완료 · B2 (IC 재실행): API 비용 ~$3-5, 승인 후 실행</small>
+  </div>
+  <div class="phase-card">
+    <h3>🟠 Phase C — 판정 이유 카테고리화 <span class="chip warn">Ready to code</span></h3>
+    <div class="bar"><div class="fill" style="width: 40%; background: #f59e0b;"></div></div>
+    <small>C1 (Kappa merge): ✅ · C2 (sanity check): ✅ · C3 (2인 코딩) · C4 (확정 미팅) · C5 (전수 코딩) 대기</small>
+  </div>
+  <div class="phase-card">
+    <h3>🟠 Phase D — Hard Example <span class="chip ok">D1 Done</span></h3>
+    <div class="bar"><div class="fill" style="width: 33%;"></div></div>
+    <small>D1 (candidate 추출 + validate): 75/125 validated · D2 (사람 검수) · D3 (accuracy 측정) 대기</small>
+  </div>
+  <div class="phase-card">
+    <h3>🔵 Phase E — PR & 브랜치 통합 <span class="chip ok">E1 Done</span></h3>
+    <div class="bar"><div class="fill" style="width: 33%;"></div></div>
+    <small>E1 (5커밋 2 PR 분할): ✅ PR #3, #4 · E2 (PR #2 머지 대기) · E3 (브랜치 정리 대기)</small>
+  </div>
+  <div class="phase-card">
+    <h3>🔵 Phase F — RQ-B/RQ-C 분석 <span class="chip ok">초안 Done</span></h3>
+    <div class="bar"><div class="fill" style="width: 50%;"></div></div>
+    <small>F1 (Memorization Score): 초안 + smoke 실행 · F2 (Salience regression): 초안 + smoke 실행 — 본 실행은 A2/B2 결과 기다림</small>
+  </div>
+  <div class="phase-card">
+    <h3>🟢 Phase G — 논문 작성 <span class="chip defer">Waiting</span></h3>
+    <div class="bar"><div class="fill" style="width: 0%;"></div></div>
+    <small>G1-G4 W4(5/6) 이후 시작. Plan에 주차별 분량 targeting 명시 (Intro 0.5p / Methodology 1p / Experiments 1p / Analysis 1p / Conclusion 0.5p).</small>
+  </div>
+</section>
+
+<section>
+  <h2>🔍 핵심 관측 (실제 데이터 기반)</h2>
+
+  <div class="finding">
+    <strong>F1. 1million 암기 현상 정량 증거 (RQ-B)</strong><br>
+    IC 계열에서 Memorization Score = <code>from_removed_data / total_values</code> 비율이 <strong>0.10 ~ 0.14</strong>. 즉 context에 없는 수치를 모델이 회상해 답에 사용. 4/15 회의에서 관찰된 "모델이 단위를 바꿔도 1million 고수" 현상이 정량적으로 재현됨. Gemini/GPT/Claude 간 편차는 balanced 실험(A2) 이후 확정.
+  </div>
+
+  <div class="finding">
+    <strong>F2. IC 탐지 실패의 압도적 방향 (RQ-A 비대칭성)</strong><br>
+    gpt-4o-mini × IC 변형에서 refusal rate = <strong>4 / 660 (0.6%)</strong>. EA 계열은 376 / 436 (86%) 거부. 이 절대적 격차 자체가 "absence ≠ conflict detection" 비대칭성의 가장 강한 증거. Salience regression이 class imbalance로 AUC 0.5 나온 것도 **IC 거부가 사실상 존재하지 않는다**는 finding.
+  </div>
+
+  <div class="finding">
+    <strong>F3. EA/SA reason 텍스트의 구분 불가능성</strong><br>
+    구 프롬프트(4/13)에서 EA-partial과 SA의 reason이 거의 동일한 "X is missing" 패턴. 카테고리 v0의 <code>MISSING_REQUIRED_VALUE</code>와 <code>MISSING_SILENT</code>를 reason 텍스트만으로는 구분할 수 없음. v0.1 제안: 두 카테고리를 <code>MISSING_DATA</code>로 통합 + <code>transformation_type</code>을 metadata로 병용.
+  </div>
+
+  <div class="finding">
+    <strong>F4. Hard Example 규모 풍부 (목표 3배)</strong><br>
+    238문제 전수 IC-L1/L2 candidate: <strong>125개</strong> 확보 (hardcoded solution 335개 자동 제외 후). Validator 실행 성공률 <strong>75/125 (60%)</strong> — 목표 24문제의 3배. 나머지 40% 실패는 주로 <code>'float' object cannot be interpreted as an integer</code>로 치환 후 타입 불일치 or 치환된 값이 로직에 영향 없어 새 정답 동일. D2 사람 검수에서 최종 채택.
+  </div>
+
+  <div class="finding">
+    <strong>F5. POT 측정 타당성 증명</strong><br>
+    B1 (<code>ic_cot_trace</code> 프롬프트) 구현으로 4/15 회의의 핵심 finding(POT가 IC 판정을 가린다)을 **실행 가능한 실험 조건으로 전환**. A2+B2 병행 시 "동일 모델이 POT로는 IC를 놓치고 CoT trace로는 탐지" 같은 타당성 주장 가능.
+  </div>
+</section>
+
+<section>
+  <h2>🚀 열린 PR</h2>
+  <div class="pr-row">
+    <span class="num">#2</span>
+    <span class="chip accent">w3-prep-2026-04-21</span>
+    <div style="flex: 1;">
+      <strong>[W3-prep] 판정 이유 카테고리 + Hard example 파이프라인</strong><br>
+      <small>Session 2 업데이트 포함 — 6 커밋 / 19 파일 / +~4000 라인. Phase C/D/F 초안 전부.</small>
+    </div>
+    <a href="https://github.com/jkcost/finance-reasoning-eval/pull/2" target="_blank">열기 →</a>
+  </div>
+  <div class="pr-row">
+    <span class="num">#3</span>
+    <span class="chip accent">prompt-reason-infra-2026-04-17</span>
+    <div style="flex: 1;">
+      <strong>[PR-A] 판정 이유 프롬프트 인프라 + 로컬 모델 provider</strong><br>
+      <small>3 커밋 · agent 브랜치의 12902ed/739d902/708999f 분리</small>
+    </div>
+    <a href="https://github.com/jkcost/finance-reasoning-eval/pull/3" target="_blank">열기 →</a>
+  </div>
+  <div class="pr-row">
+    <span class="num">#4</span>
+    <span class="chip accent">phase-a-analysis-dry-run-2026-04-16</span>
+    <div style="flex: 1;">
+      <strong>[PR-B] Phase A 원본 컨텍스트 오답 분석 + balanced 실험 dry-run</strong><br>
+      <small>2 커밋 · b9262be/78f3367 분리 · PR-A와 독립 리뷰</small>
+    </div>
+    <a href="https://github.com/jkcost/finance-reasoning-eval/pull/4" target="_blank">열기 →</a>
+  </div>
+</section>
+
+<section>
+  <h2>🎚 코드 리뷰 팀 발견 → 수정</h2>
+  <table>
+    <thead>
+      <tr><th>Reviewer</th><th>Severity</th><th>Issue</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Correctness</td><td><span class="chip fail">High</span></td><td>validate_hard_example: bool 리터럴이 int 서브클래스 → 1.0 치환 시 True/False 오염</td><td><span class="chip ok">Fixed</span> isinstance(bool) 가드</td></tr>
+      <tr><td>Correctness</td><td><span class="chip fail">High</span></td><td>_extract_last_number: NaN/Inf 통과 시 delta 비교 오판</td><td><span class="chip ok">Fixed</span> math.isfinite 체크</td></tr>
+      <tr><td>Correctness</td><td><span class="chip warn">Medium</span></td><td>qid 타입 혼재(int/str)로 R4 필터 silent drop</td><td><span class="chip ok">Fixed</span> _eval_io.py에 str 정규화 강제</td></tr>
+      <tr><td>Correctness</td><td><span class="chip warn">Medium</span></td><td>extract_existing_reasons: raw_response가 dict/None인 경우 TypeError</td><td><span class="chip ok">Fixed</span> 타입 가드 + 명시적 분기</td></tr>
+      <tr><td>Security</td><td><span class="chip fail">High</span></td><td>AST sanitizer가 attribute-chain (<code>np.load</code> alias) 우회 허용</td><td><span class="chip ok">Fixed</span> BANNED_ATTRIBUTE_LEAVES로 leaf 이름 차단</td></tr>
+      <tr><td>Security</td><td><span class="chip fail">High</span></td><td>subprocess에 OPENAI/ANTHROPIC/GOOGLE API 키 env 상속</td><td><span class="chip ok">Fixed</span> 최소 env + <code>python -I</code> isolated 모드</td></tr>
+      <tr><td>Maintainability</td><td><span class="chip warn">Medium</span></td><td>_load_results 3개 스크립트 중복</td><td><span class="chip ok">Fixed</span> experiments/_eval_io.py 통합</td></tr>
+      <tr><td>Maintainability</td><td><span class="chip defer">Low</span></td><td>NaN 체크에 <code>x != x</code> 관용구 (가독성)</td><td><span class="chip ok">Fixed</span> math.isnan 사용</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top: 12px; font-size: 12px; color: var(--muted);">Ruff 0.15.11 최종 실행: <code>All checks passed</code></p>
+</section>
+
+<section>
+  <h2>⏭ 다음 스텝 (팀 의존)</h2>
+  <ul class="plain">
+    <li><strong>C3 (2인 수동 코딩, 3~4h/인)</strong> — 진규 + 우익이 <code>reason_coding_workbook_solvable.html</code>을 열고 URL 파라미터로 분배 후 코딩 → JSON 내보내기 → annotations/ 제출</li>
+    <li><strong>C4 (카테고리 확정 미팅)</strong> — <code>python experiments/merge_reason_codings.py --a ... --b ...</code> 실행 → Cohen's Kappa 측정 → 다음 주간 회의에서 v1 확정</li>
+    <li><strong>D2 (Hard Example 사람 검수)</strong> — 진규가 <code>hard_example_review.html</code>에서 75개 validated 채택/수정/기각 결정</li>
+    <li><strong>A2 (Balanced 실험 실행, ~$5-8 비용)</strong> — 예산 승인 후 <code>./experiments/run_balanced_experiment.sh --execute --strategy all</code></li>
+    <li><strong>B2 (IC CoT 재실행, ~$3-5 비용)</strong> — PR-A 머지 후 <code>run_batch_evaluation.py --prompt-strategy ic_cot_trace</code></li>
+    <li><strong>PR-A/B 리뷰</strong> — 팀 리뷰어가 #3/#4 승인 후 feat 브랜치에 머지</li>
+    <li><strong>G (논문 작성, 5월~)</strong> — F1/F2 본 실행 결과 확정 후 Methodology → Results → Related → Discussion</li>
+  </ul>
+</section>
+
+<section>
+  <h2>📁 산출물 위치</h2>
+  <table>
+    <thead><tr><th>카테고리</th><th>경로</th></tr></thead>
+    <tbody>
+      <tr><td>Plan</td><td><code>docs/plans/2026-04-21-001-feat-cikm-short-execution-plan.md</code></td></tr>
+      <tr><td>회의록</td><td><code>docs/meetings/2026-04-15-team-sync.md</code></td></tr>
+      <tr><td>Memory (4/15 회의 distilled)</td><td><code>docs/memory/project_rq_direction_shift_2026_04_15.md</code> · <code>project_pot_limitation_ic.md</code> · <code>feedback_exclude_baseline_wrong.md</code> · <code>project_reason_categories_draft.md</code></td></tr>
+      <tr><td>Backlog</td><td><code>docs/backlog/local_model_experiment.md</code></td></tr>
+      <tr><td>신규 스크립트</td><td><code>experiments/_eval_io.py</code> · <code>extract_existing_reasons.py</code> · <code>merge_reason_codings.py</code> · <code>extract_ic_l1_l2_candidates.py</code> · <code>validate_hard_example.py</code> · <code>generate_hard_example_review.py</code> · <code>generate_reason_coding_workbook.py</code> · <code>compute_memorization_score.py</code> · <code>fit_salience_regression.py</code></td></tr>
+      <tr><td>수정 파일</td><td><code>experiments/run_metacognitive_experiment.py</code> (<code>ic_cot_trace</code> 전략 추가)</td></tr>
+      <tr><td>실행 산출 (.gitignore)</td><td><code>experiments/results/metacognitive/reasons_solvable.json</code> · <code>reason_coding_workbook_solvable.html</code> · <code>hard_example_candidates.json</code> · <code>hard_example_validated.json</code> · <code>hard_example_review.html</code> · <code>memorization_score.json</code> · <code>salience_regression.json</code>+<code>.csv</code></td></tr>
+      <tr><td>이 대시보드</td><td><code>docs/sessions/2026-04-21-session-2-dashboard.html</code></td></tr>
+      <tr><td>상세 MD 로그</td><td><code>docs/sessions/2026-04-21-session-2.md</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer style="text-align: center; padding: 40px 0; color: var(--muted); font-size: 12px;">
+  Generated 2026-04-21 · Session 2 autonomous completion · <a href="../plans/2026-04-21-001-feat-cikm-short-execution-plan.md">plan</a> · <a href="../meetings/2026-04-15-team-sync.md">meeting</a>
+</footer>
+
+</main>
+</body>
+</html>

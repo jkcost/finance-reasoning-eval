@@ -72,14 +72,21 @@
 
 ## Submission Strategy (2026-04-15)
 - [CIKM 2026 Short → AAAI 2027 확장 전략 (RQ-A/B/C CIKM, RQ-D/E AAAI)](project_submission_strategy.md)
-- [RQ-B POT Faithfulness 측정 도구 (Value Provenance + Memorization Score)](project_pot_faithfulness_rqb.md)
+- [RQ-B POT Faithfulness 측정 도구 (Value Provenance + Memorization Score)](project_pot_faithfulness_rqb.md) — 1million 모델별 재현 증거 포함 (from 4/15 sync)
 - [RQ-C Conflict Salience Regression (4 feature logistic regression)](project_conflict_salience_rqc.md)
+
+## Meeting-Derived Decisions (4/15 team sync)
+- [연구 앵글 2축 확장 — 판정 이유 카테고리화 + Hard example 생성](project_rq_direction_shift_2026_04_15.md)
+- [POT 프롬프트의 IC 판정 한계 — CoT/reasoning trace 전환](project_pot_limitation_ic.md)
+- [원본 오답 문제는 메인 분석에서 제외](feedback_exclude_baseline_wrong.md)
+- [판정 이유 카테고리 v0 draft + Kappa 프로토콜](project_reason_categories_draft.md)
 
 ## Feedback
 - [변환은 반드시 LLM 기반으로 수행](feedback_llm_based_transformation.md)
 
 ## Project History
 - [규칙 기반 변환 v1 작업 이력](project_rule_based_v1_archive.md)
+- [회의록 보관소](../meetings/) — 주 1회 주간 회의 raw transcript + decisions 섹션
 
 ## Reasoning Trace Validation Pipeline (2026-03-05)
 - **Purpose**: validate_transformation()의 python_solution 의존 한계 극복 (hard.json 64% 하드코딩)

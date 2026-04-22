@@ -154,7 +154,211 @@ def _extract_critical_values_from_solution(python_solution: str) -> Dict[str, An
     }
 
 
-def _render_problem_card(problem: Dict, idx: int) -> str:
+def _render_error_overlay(
+    qid: str,
+    error_tags: Dict,
+    error_analyses: Dict = None,
+) -> str:
+    """Render B1 Error Category overlay for the ORIGINAL Context response card.
+
+    Shows:
+      - ⚠ Error Category + failure stage (heuristic)
+      - 🔍 Short note
+      - 💬 CoT refusal reason (what CoT trace said)
+      - 📝 LLM 상세 한글 해설 (summary / detailed_analysis / likely_cause / correct_approach)
+    """
+    tag = (error_tags or {}).get(qid)
+    analysis = (error_analyses or {}).get("analyses", {}).get(qid) if error_analyses else None
+    if not tag and not analysis:
+        return ""
+
+    parts: list[str] = ['<div class="enrich-block">']
+
+    if tag:
+        cat = tag.get("error_category", "?")
+        stage = tag.get("failure_stage", "?")
+        note = _esc(tag.get("note", ""))
+        cot_reason = _esc(tag.get("cot_refusal_reason") or "—")
+        parts.append(
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">⚠ Error Category</span>'
+            f'<span class="enrich-cat enrich-err-{cat}">{cat}</span>'
+            f'<span class="enrich-conf">stage: {stage}</span>'
+            f"</div>"
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">🔍 Note</span>'
+            f'<span class="enrich-reason">{note}</span>'
+            f"</div>"
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">💬 CoT reason</span>'
+            f'<span class="enrich-reason">{cot_reason}</span>'
+            f"</div>"
+        )
+
+    if analysis:
+        parts.append(_render_analysis_html(analysis))
+
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def _render_transformed_analysis(
+    qid: str,
+    ttype: str,
+    strategy: str,
+    transformed_analyses: Dict = None,
+) -> str:
+    """Render LLM 한글 해설 for a transformed-context response card.
+
+    `transformed_analyses` shape: {qid: {ttype: {strategy: analysis}}}
+    Applies to "standard", "metacognitive", and "cot_trace" cards.
+    """
+    if not transformed_analyses:
+        return ""
+    analysis = (
+        transformed_analyses.get("analyses", {})
+        .get(qid, {})
+        .get(ttype, {})
+        .get(strategy)
+    )
+    if not analysis:
+        return ""
+    return _render_analysis_html(analysis)
+
+
+def _verification_badge(analysis: Dict) -> str:
+    """Render verification badge based on python_solution cross-check."""
+    status = analysis.get("verification_status", "unverified")
+    note = _esc(analysis.get("verification_note", ""))
+    emoji_map = {
+        "consistent": ("✅", "#10b981", "python_solution과 일치"),
+        "needs_review": ("⚠", "#f59e0b", "부분 일치 — 검토 권장"),
+        "contradicts": ("❌", "#ef4444", "python_solution과 모순 — 수정 필요"),
+        "regenerated": ("♻", "#3b82f6", "python_solution 기반 재생성됨 (v1)"),
+        "regenerated_v2": ("✨", "#8b5cf6", "v2 프롬프트 재생성: 변환 맥락 + 거부/오답 분기"),
+        "unverified": ("", "#6b7280", ""),
+    }
+    emoji, color, default_note = emoji_map.get(status, emoji_map["unverified"])
+    if not emoji:
+        return ""
+    tooltip_note = note or default_note
+    return (
+        f'<span class="llm-verify" '
+        f'style="background:{color}18;color:{color};border:1px solid {color}66;" '
+        f'title="{tooltip_note}">{emoji} {status}</span>'
+    )
+
+
+def _render_analysis_html(analysis: Dict) -> str:
+    """Shared analysis block renderer with verification badge."""
+    etype = _esc(analysis.get("error_type", ""))
+    summary = _esc(analysis.get("summary", ""))
+    detailed = _esc(analysis.get("detailed_analysis", ""))
+    cause = _esc(analysis.get("likely_cause", ""))
+    approach = _esc(analysis.get("correct_approach", ""))
+    confidence = analysis.get("confidence", 0)
+    is_refusal = analysis.get("is_refusal", False)
+    verify_note = _esc(analysis.get("verification_note", ""))
+    title = "📝 LLM 한글 해설 (거부 분석)" if is_refusal else "📝 LLM 한글 해설 (오답 분석)"
+    verify_badge = _verification_badge(analysis)
+    verify_row = (
+        f'<div class="llm-row"><span class="llm-label">검증 사유</span>'
+        f'<span style="font-size:11px;color:var(--text2);">{verify_note}</span></div>'
+        if verify_note
+        else ""
+    )
+    return (
+        f'<div class="llm-analysis">'
+        f'<div class="llm-header">{title} '
+        f'<span class="llm-model">(gpt-4o-mini, conf={confidence:.2f})</span>'
+        f"{verify_badge}"
+        f"</div>"
+        f'<div class="llm-row"><span class="llm-label">유형</span><code>{etype}</code></div>'
+        f'<div class="llm-row"><span class="llm-label">요약</span><strong>{summary}</strong></div>'
+        f'<div class="llm-row"><span class="llm-label">상세</span>{detailed}</div>'
+        f'<div class="llm-row"><span class="llm-label">원인</span>{cause}</div>'
+        f'<div class="llm-row"><span class="llm-label">정답 접근</span>{approach}</div>'
+        f"{verify_row}"
+        f"</div>"
+    )
+
+
+def _render_enrich_block(
+    qid: str,
+    ttype: str,
+    resp_id: str,
+    enrich_reasons: Dict = None,
+    enrich_mems: Dict = None,
+    error_tags: Dict = None,
+    error_analyses: Dict = None,
+    transformed_analyses: Dict = None,
+) -> str:
+    """Render A1 (reason category) + F1 (Memorization) + B1 (Error Category) overlays.
+
+    - A1+F1: attached to the "metacognitive" card.
+    - B1 Error Category + LLM 해설: attached to the "original" card (v4 extension).
+    - Transformed LLM 해설: attached to "standard" / "metacognitive" / "cot_trace" cards.
+    """
+    # v4: original card gets Error Category overlay + LLM 한글 해설
+    if resp_id == "original":
+        return _render_error_overlay(qid, error_tags or {}, error_analyses)
+
+    # v4+: transformed cards get their own LLM 한글 해설
+    if resp_id in ("standard", "cot_trace"):
+        return _render_transformed_analysis(qid, ttype, resp_id, transformed_analyses)
+
+    if resp_id != "metacognitive":
+        return ""
+
+    # Metacognitive card: A1 + F1 오버레이 + (추가로) LLM 한글 해설
+    llm_analysis = _render_transformed_analysis(qid, ttype, "metacognitive", transformed_analyses)
+    reason_meta = (enrich_reasons or {}).get(qid, {}).get(ttype)
+    mem_meta = (enrich_mems or {}).get(qid, {}).get(ttype)
+    if not reason_meta and not mem_meta and not llm_analysis:
+        return ""
+
+    parts: list[str] = []
+    if reason_meta:
+        cat = reason_meta.get("category", "?")
+        reason = _esc(reason_meta.get("reason", ""))
+        conf = _esc(reason_meta.get("confidence", ""))
+        parts.append(
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">📋 Reason</span>'
+            f'<span class="enrich-reason">{reason}</span>'
+            f"</div>"
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">🏷 Category</span>'
+            f'<span class="enrich-cat enrich-cat-{cat}">{cat}</span>'
+            f'<span class="enrich-conf">({conf})</span>'
+            f"</div>"
+        )
+    if mem_meta:
+        rate = float(mem_meta.get("memorization_rate", 0.0) or 0.0)
+        counts = mem_meta.get("counts", {}) or {}
+        total = int(mem_meta.get("total_values", 0) or 0)
+        from_removed = int(counts.get("from_removed_data", 0) or 0)
+        rate_color = "#ef4444" if rate > 0 else "#9ca3af"
+        parts.append(
+            f'<div class="enrich-row">'
+            f'<span class="enrich-label">🧠 Memorization</span>'
+            f'<span class="enrich-value" style="color:{rate_color}">{rate:.3f}</span>'
+            f'<span class="enrich-conf">'
+            f"from_removed={from_removed} / total={total}</span>"
+            f"</div>"
+        )
+    return '<div class="enrich-block">' + "".join(parts) + "</div>" + llm_analysis
+
+
+def _render_problem_card(
+    problem: Dict,
+    idx: int,
+    enrich_reasons: Dict = None,
+    enrich_mems: Dict = None,
+    error_tags: Dict = None,
+    error_analyses: Dict = None,
+    transformed_analyses: Dict = None,
+) -> str:
     """Render a single problem review card."""
     qid = problem["question_id"]
     question = problem["question"]
@@ -305,6 +509,17 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                     tdata.get("metacognitive_execution_error", ""),
                     "#a78bfa",
                 ),
+                (
+                    "cot_trace",
+                    "변환 Context (POT + reasoning trace) 🆕 v4",
+                    tdata.get("cot_trace_response", ""),
+                    tdata.get("cot_trace_predicted", ""),
+                    tdata.get("cot_trace_is_correct", False),
+                    tdata.get("cot_trace_case_type", 0),
+                    tdata.get("cot_trace_response_type", ""),
+                    tdata.get("cot_trace_execution_error", ""),
+                    "#ec4899",
+                ),
             ]
 
             has_any_response = any(cfg[2] for cfg in response_configs)
@@ -340,6 +555,11 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                     if exec_err:
                         error_html = f'<div class="result-error">에러: {_esc(str(exec_err)[:80])}</div>'
 
+                    enrich_html = _render_enrich_block(
+                        qid, ttype, resp_id,
+                        enrich_reasons, enrich_mems,
+                        error_tags, error_analyses, transformed_analyses,
+                    )
                     panel_content += (
                         f'<div class="response-card" style="border-color:{accent}60">'
                         f'<div class="response-card-header" style="color:{accent}">{label}</div>'
@@ -352,6 +572,7 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
                         f'<span class="result-gt" style="font-size:11px;">정답: {_esc(str(gt_val))}</span>'
                         f"</div>"
                         f"{error_html}"
+                        f"{enrich_html}"
                         f'<details class="model-response-details">'
                         f"<summary>응답 코드</summary>"
                         f'<pre class="model-response-content">{_esc(raw_resp[:1200])}</pre>'
@@ -451,13 +672,24 @@ def _render_problem_card(problem: Dict, idx: int) -> str:
     </div>"""
 
 
-def generate_html(data: Dict, preloaded_annotations: Dict = None) -> str:
+def generate_html(
+    data: Dict,
+    preloaded_annotations: Dict = None,
+    enrich_reasons: Dict = None,
+    enrich_mems: Dict = None,
+    error_tags: Dict = None,
+    error_analyses: Dict = None,
+    transformed_analyses: Dict = None,
+) -> str:
     """Generate the full HTML review page.
 
     Args:
         data: Batch transformation result JSON.
         preloaded_annotations: Optional merged annotations to embed in HTML.
             Format: {qid: {ttype: {judgment, note, ...}}}
+        enrich_reasons: Optional {qid: {ttype: {reason, category, confidence}}}
+            overlay for the metacognitive response card.
+        enrich_mems: Optional {qid: {ttype: {memorization_rate, counts, total_values}}}.
     """
     metadata = data["metadata"]
     coverage = data["coverage_summary"]
@@ -469,7 +701,11 @@ def generate_html(data: Dict, preloaded_annotations: Dict = None) -> str:
     # Problem cards
     cards_html = ""
     for problem in problems:
-        cards_html += _render_problem_card(problem, problem["index"])
+        cards_html += _render_problem_card(
+            problem, problem["index"],
+            enrich_reasons, enrich_mems,
+            error_tags, error_analyses, transformed_analyses,
+        )
 
     # Coverage rows
     coverage_rows = ""
@@ -683,7 +919,7 @@ h1 {{ font-size: 22px; font-weight: 600; }}
 .guide-card p {{ font-size: 12px; color: var(--text2); margin-bottom: 4px; }}
 .guide-card .guide-tag {{ display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-right: 4px; }}
 .guide-card .example {{ font-size: 11px; background: var(--bg); padding: 6px 8px; border-radius: 4px; margin-top: 6px; font-family: monospace; white-space: pre-wrap; }}
-.prompt-comparison {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }}
+.prompt-comparison {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }}
 .prompt-card {{ background: var(--surface2); border-radius: 8px; padding: 12px; border-top: 3px solid; }}
 .prompt-card h4 {{ font-size: 12px; margin-bottom: 6px; }}
 .prompt-desc {{ font-size: 11px; color: var(--text2); margin-bottom: 8px; line-height: 1.5; }}
@@ -702,6 +938,42 @@ h1 {{ font-size: 22px; font-weight: 600; }}
   .summary-grid {{ grid-template-columns: repeat(3, 1fr); }}
   .guide-grid {{ grid-template-columns: 1fr; }}
 }}
+
+/* Enrich overlay — A1 (reason category) + F1 (Memorization) */
+.enrich-block {{ margin-top: 10px; padding: 10px 12px; background: var(--bg); border-radius: 6px; border: 1px dashed var(--border); font-size: 12px; }}
+.enrich-row {{ display: flex; align-items: center; gap: 8px; margin: 4px 0; flex-wrap: wrap; }}
+.enrich-label {{ color: var(--text2); font-size: 11px; min-width: 110px; font-weight: 600; flex-shrink: 0; }}
+.enrich-value {{ color: var(--text); font-family: monospace; font-weight: 600; }}
+.enrich-reason {{ color: var(--text); font-size: 12px; line-height: 1.5; flex: 1; min-width: 0; }}
+.enrich-conf {{ color: var(--text2); font-size: 10px; font-style: italic; margin-left: auto; }}
+.enrich-cat {{ padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: monospace; color: white; font-weight: 600; }}
+.enrich-cat-MISSING_REQUIRED_VALUE {{ background: #3b82f6; }}
+.enrich-cat-MISSING_SILENT {{ background: #06b6d4; }}
+.enrich-cat-CONFLICTING_VALUES {{ background: #ef4444; }}
+.enrich-cat-UNIT_AMBIGUITY {{ background: #8b5cf6; }}
+.enrich-cat-TEMPORAL_MISMATCH {{ background: #a855f7; }}
+.enrich-cat-UNDERSPECIFIED {{ background: #6b7280; }}
+.enrich-cat-UNCATEGORIZABLE {{ background: #111827; border: 1px solid #ef4444; }}
+/* Error Category (B1 extension) — warmer palette to distinguish from A1 */
+.enrich-err-OK {{ background: #10b981; color: white; }}
+.enrich-err-FORMULA_ERROR {{ background: #f97316; color: white; }}
+.enrich-err-EXTRACTION_ERROR {{ background: #f59e0b; color: white; }}
+.enrich-err-CALCULATION_ERROR {{ background: #eab308; color: white; }}
+.enrich-err-MISUNDERSTANDING {{ background: #ef4444; color: white; }}
+.enrich-err-UNIT_ERROR {{ background: #f472b6; color: white; }}
+.enrich-err-OVER_REFUSAL {{ background: #dc2626; color: white; border: 1px solid #fbbf24; }}
+.enrich-err-HALLUCINATION {{ background: #7f1d1d; color: white; }}
+.enrich-err-LOGIC_ERROR {{ background: #a21caf; color: white; }}
+
+/* LLM analysis block (v4 extension for original context wrong answers) */
+.llm-analysis {{ margin-top: 10px; padding: 12px 14px; background: linear-gradient(135deg, #0f172a, #1e293b); border-radius: 6px; border-left: 3px solid #38bdf8; font-size: 12px; line-height: 1.6; }}
+.llm-header {{ color: #38bdf8; font-weight: 700; margin-bottom: 8px; font-size: 12px; }}
+.llm-model {{ color: var(--text2); font-weight: 400; font-size: 10px; margin-left: 6px; font-style: italic; }}
+.llm-row {{ margin: 5px 0; display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }}
+.llm-label {{ color: #94a3b8; font-size: 11px; font-weight: 600; min-width: 70px; flex-shrink: 0; letter-spacing: 0.03em; }}
+.llm-row code {{ font-size: 11px; background: #0b1220; color: #e2e8f0; padding: 2px 6px; border-radius: 3px; }}
+.llm-row strong {{ color: #fde68a; }}
+.llm-verify {{ display: inline-block; margin-left: 10px; padding: 1px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; vertical-align: middle; }}
 </style>
 </head>
 <body>
@@ -883,6 +1155,93 @@ h1 {{ font-size: 22px; font-weight: 600; }}
       </div>
 
       <div class="guide-section">
+        <h3>A1 Reason Category — 거부 이유 분류 (신규, v3)</h3>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+          모델이 <code>INSUFFICIENT_INFORMATION</code>으로 거부할 때 남긴 reason 텍스트를 아래 6 카테고리로 태깅합니다.
+          각 <strong>metacognitive 응답 카드</strong> 내부의 🏷 배지는 휴리스틱 자동 태깅(<em>preview</em>)이며, 리뷰어가 수정할 수 있습니다.
+          구 POT 프롬프트 기반이라 IC 계열은 reason 자체가 드물어 배지가 거의 비어있습니다 — 이는
+          <strong>POT 측정 한계의 시각적 증거</strong>이며, B1(<code>ic_cot_trace</code>) 실행 후 v4에서 채워질 예정입니다.
+        </p>
+        <table>
+          <tr><th>카테고리 배지</th><th>정의</th><th>예시 reason</th><th>주로 발생</th></tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-MISSING_REQUIRED_VALUE">MISSING_REQUIRED_VALUE</span></td>
+            <td>계산에 필수인 값이 <strong>명시적으로</strong> 비었음을 인지</td>
+            <td>"Cost of equity is missing"</td>
+            <td>EA-partial (N/A 마커 인지)</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-MISSING_SILENT">MISSING_SILENT</span></td>
+            <td>마커 없이 데이터 부재를 <strong>암묵적으로</strong> 추론</td>
+            <td>"Daily closing prices are not provided"</td>
+            <td>SA (무표지 제거)</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-CONFLICTING_VALUES">CONFLICTING_VALUES</span></td>
+            <td>두 개 이상의 모순된 수치가 공존함을 지적</td>
+            <td>"Revenue is listed as both $500M and $750M"</td>
+            <td>IC-L1/L3 (권위 충돌)</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-UNIT_AMBIGUITY">UNIT_AMBIGUITY</span></td>
+            <td>단위/통화/규모 불일치</td>
+            <td>"Mismatch between million and billion units"</td>
+            <td>IC-L2</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-TEMPORAL_MISMATCH">TEMPORAL_MISMATCH</span></td>
+            <td>기간·시점 불일치 (분기합 ≠ 연간 등)</td>
+            <td>"Quarterly sums don't match annual total"</td>
+            <td>IC-L4, TA</td>
+          </tr>
+          <tr>
+            <td><span class="enrich-cat enrich-cat-UNDERSPECIFIED">UNDERSPECIFIED</span></td>
+            <td>위 5개에 속하지 않는 일반적 정보 부족 (fallback)</td>
+            <td>"The question does not provide the necessary data..."</td>
+            <td>모든 변형</td>
+          </tr>
+        </table>
+        <p style="font-size:11px;color:var(--text2);margin-top:8px;">
+          <strong>리뷰 체크:</strong> auto 태그가 reason 텍스트와 실제로 맞는지 확인하고,
+          여러 신호가 동시에 있으면 <strong>가장 구체적인</strong> 카테고리를 선택하세요.
+          어느 카테고리에도 맞지 않으면 <span class="enrich-cat enrich-cat-UNCATEGORIZABLE">UNCATEGORIZABLE</span>로 표시 후 메모에 근거를 작성합니다.
+        </p>
+      </div>
+
+      <div class="guide-section">
+        <h3>F1 Memorization Score — 회상(암기) 지표 (신규, v3)</h3>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">
+          모델 응답의 각 숫자를 5가지 출처로 분류한 뒤 <code>from_removed_data</code> 비율을 Memorization Score로 정의합니다.
+          회의에서 논의된 <strong>1million 현상</strong>(제거된 값을 모델이 회상하는 것)을 정량 지표로 잡기 위한 장치입니다.
+          각 metacognitive 응답 카드의 🧠 Memorization 행에서 확인할 수 있습니다.
+        </p>
+        <table>
+          <tr><th>분류</th><th>의미</th><th>해석</th></tr>
+          <tr><td><code>from_context</code></td><td>변환된 context에서 직접 읽음</td><td>정상 (추론 기반)</td></tr>
+          <tr><td><code>from_removed_data</code></td><td>제거/변형된 원본값을 회상</td><td>⚠ 암기 신호 — 점수에 반영</td></tr>
+          <tr><td><code>fabricated</code></td><td>아무 출처 없음</td><td>환각 (별도 분석)</td></tr>
+          <tr><td><code>common_constant</code></td><td>보편 상수 (tax_rate 0.21, 365 등)</td><td>점수 계산에서 제외</td></tr>
+          <tr><td><code>derived</code></td><td>context 값들의 산술 연산 결과</td><td>정상 (계산 결과)</td></tr>
+        </table>
+        <table style="margin-top:10px;">
+          <tr><th>Score 구간</th><th>해석</th></tr>
+          <tr><td><strong>0.000</strong></td><td>정상 (context 기반 추론, 회색 표시)</td></tr>
+          <tr><td><strong>0.001 ~ 0.05</strong></td><td>경미한 암기 흔적 (1~2개 값 회상)</td></tr>
+          <tr><td><strong>0.05 ~ 0.20</strong></td><td>유의미한 암기 — 표본이 작을 때 한 값으로도 진입</td></tr>
+          <tr><td><strong>&gt; 0.20</strong></td><td>명백한 암기 — 응답 재검토 필요 (빨강 표시)</td></tr>
+        </table>
+        <p style="font-size:11px;color:var(--text2);margin-top:8px;">
+          <strong>리뷰 체크:</strong> Memorization Score가 <code>&gt; 0</code>인 cell은 응답 코드 details를 열어
+          실제로 회상된 숫자가 context에 존재하지 않는지 확인합니다. 회의에서 논의된 test-2009(1million 사례)처럼
+          모델이 context 외부 값을 가져다 쓰는 케이스가 여기서 드러납니다.
+        </p>
+        <p style="font-size:11px;color:var(--text2);margin-top:4px;">
+          <strong>주의:</strong> 구 POT 프롬프트에선 대부분 <code>0.000 ~ 0.05</code> 수준으로 관측됩니다.
+          B1(<code>ic_cot_trace</code>) 실행 후 LOCATE 필드로 값 출처가 명시되면 측정 정확도가 상승할 것으로 예상합니다.
+        </p>
+      </div>
+
+      <div class="guide-section">
         <h3>Python Solution 읽는 법</h3>
         <p style="font-size:12px;color:var(--text2);">
           각 문제 하단의 Python Solution에서 <span style="color:var(--green);">● 초록색</span> 변수는 최종 답(answer)을 계산하는 데 사용되는 값이고,
@@ -947,6 +1306,49 @@ Do NOT guess, assume, or fabricate missing values.
 
 If the data is sufficient, generate the solution program normally.</pre>
             </details>
+          </div>
+          <div class="prompt-card" style="border-color:#ec4899;">
+            <h4 style="color:#ec4899;">4. 변환 Context + POT + Reasoning Trace 🆕 v4</h4>
+            <p class="prompt-desc">POT 코드 안에 <strong>IDENTIFY → LOCATE → CROSS-CHECK → MISSING → COMPUTE</strong> 5단계 reasoning trace를 주석으로 강제. POT 형식 유지(FinanceReasoning 호환)하면서도 "어떤 값을 왜 선택했는지" 추적 가능. IC 계열(권위 충돌/단위 불일치/기간 합산) 측정 타당성 향상 목적. 회의 4/15에서 확정된 POT 한계 대응책.</p>
+            <details class="prompt-details">
+              <summary>System Prompt 전문 보기</summary>
+              <pre class="prompt-pre">You are a financial expert. Follow this reasoning protocol rigorously:
+
+REASONING TRACE (write this as comments inside the solution BEFORE any computation):
+
+  1. IDENTIFY: List every numeric value needed to answer the question.
+  2. LOCATE: For each value, quote the exact source from the context
+     (field name, table cell, sentence) in a comment.
+  3. CROSS-CHECK: If multiple context mentions give different values for
+     the same metric, generate:
+```python
+def solution():
+    # IDENTIFY: need <metric1>, <metric2>, ...
+    # LOCATE: <metric1> from <loc1>
+    # CROSS-CHECK: <metric> has conflicting values <v1> vs <v2>
+    return "INSUFFICIENT_INFORMATION: conflict on <metric> — <v1> vs <v2>"
+```
+  4. MISSING: If a required value is absent, generate:
+```python
+def solution():
+    # IDENTIFY: need <metric1>, <metric2>, ...
+    # MISSING: <metric> not found in context
+    return "INSUFFICIENT_INFORMATION: <metric> not found in context"
+```
+  5. COMPUTE: Only when the trace passes all checks, write the actual
+     calculation AFTER the trace comments. Every value used must be
+     traceable to a LOCATE comment above.
+
+Target usage: IC-L2 (unit mismatch), IC-L3 (authority conflict),
+IC-L4 (period sum mismatch) variants where understanding WHICH value
+the model chose, and WHY, is essential to measurement validity.</pre>
+            </details>
+            <p style="font-size:10px;color:var(--text2);margin-top:6px;padding:4px 6px;background:#1a0a1a;border-radius:4px;border-left:2px solid #ec4899;">
+              <strong>트레이드오프:</strong> IC-L3 거부율 0% → 95%로 개선됐지만,
+              원본 정답률은 POT 75% → <strong style="color:#ef4444">CoT 0%</strong>로
+              <strong>over-refusal</strong> 발생 (Rule of 78 같은 암기 공식도 context에 없다고 거부).
+              Precision-Recall 트레이드오프 — 논문 Discussion 섹션 소재.
+            </p>
           </div>
         </div>
         <p style="font-size:11px;color:var(--text2);margin-top:8px;">
@@ -1542,6 +1944,48 @@ def main():
         default=None,
         help="Evaluation results JSON (adds model responses to review)",
     )
+    parser.add_argument(
+        "--enrich-reasons",
+        type=str,
+        default=None,
+        help="JSON file with A1 reason categories (output of auto_tag_reason_categories.py)",
+    )
+    parser.add_argument(
+        "--enrich-memorization",
+        type=str,
+        default=None,
+        help="JSON file with F1 Memorization Score per (qid, transformation_type)",
+    )
+    parser.add_argument(
+        "--enrich-errors",
+        type=str,
+        default=None,
+        help="JSON file with B1 Error Category tags per qid (original context)",
+    )
+    parser.add_argument(
+        "--enrich-error-analysis",
+        type=str,
+        default=None,
+        help="JSON file with LLM-generated Korean error analysis per qid (original context)",
+    )
+    parser.add_argument(
+        "--enrich-transformed-analysis",
+        type=str,
+        default=None,
+        help="JSON file with LLM-generated Korean analysis per (qid, ttype, strategy) for transformed responses",
+    )
+    parser.add_argument(
+        "--start",
+        type=int,
+        default=None,
+        help="Slice start index of problems (inclusive)",
+    )
+    parser.add_argument(
+        "--end",
+        type=int,
+        default=None,
+        help="Slice end index of problems (exclusive)",
+    )
     args = parser.parse_args()
 
     project_root = Path(__file__).parent.parent
@@ -1557,6 +2001,15 @@ def main():
 
     logger.info(f"로드: {input_path}")
     logger.info(f"문제 수: {len(data['problems'])}")
+
+    # Optional --start/--end slicing of problem set
+    if args.start is not None or args.end is not None:
+        start = args.start or 0
+        end = args.end if args.end is not None else len(data["problems"])
+        data["problems"] = data["problems"][start:end]
+        # Update metadata range so output filename + coverage stats reflect slice
+        data.setdefault("metadata", {})["range"] = [start, end]
+        logger.info(f"범위 제한 적용: [{start}, {end}) → {len(data['problems'])}문제")
 
     # Load pre-merged annotations if provided
     preloaded = None
@@ -1659,7 +2112,87 @@ def main():
 
             logger.info(f"추가 Eval 로드: {eval_name} ({injected}건)")
 
-    html_content = generate_html(data, preloaded_annotations=preloaded)
+    # Load enrich overlays (A1 reason categories + F1 Memorization Score)
+    enrich_reasons = None
+    enrich_mems = None
+    if args.enrich_reasons:
+        er_path = project_root / args.enrich_reasons
+        if not er_path.is_absolute() and not er_path.exists():
+            er_path = results_dir / Path(args.enrich_reasons).name
+        if er_path.exists():
+            with open(er_path, "r", encoding="utf-8") as f:
+                enrich_reasons = json.load(f)
+            logger.info(
+                f"Enrich(reasons) 로드: {er_path} "
+                f"({sum(len(v) for v in enrich_reasons.values())} cells)"
+            )
+        else:
+            logger.warning(f"Enrich(reasons) 파일 없음: {er_path}")
+    if args.enrich_memorization:
+        em_path = project_root / args.enrich_memorization
+        if not em_path.is_absolute() and not em_path.exists():
+            em_path = results_dir / Path(args.enrich_memorization).name
+        if em_path.exists():
+            with open(em_path, "r", encoding="utf-8") as f:
+                enrich_mems = json.load(f)
+            logger.info(
+                f"Enrich(memorization) 로드: {em_path} "
+                f"({sum(len(v) for v in enrich_mems.values())} cells)"
+            )
+        else:
+            logger.warning(f"Enrich(memorization) 파일 없음: {em_path}")
+
+    error_tags = None
+    if args.enrich_errors:
+        et_path = project_root / args.enrich_errors
+        if not et_path.is_absolute() and not et_path.exists():
+            et_path = results_dir / Path(args.enrich_errors).name
+        if et_path.exists():
+            with open(et_path, "r", encoding="utf-8") as f:
+                error_tags = json.load(f)
+            logger.info(f"Enrich(errors) 로드: {et_path} ({len(error_tags)} qids)")
+        else:
+            logger.warning(f"Enrich(errors) 파일 없음: {et_path}")
+
+    error_analyses = None
+    if args.enrich_error_analysis:
+        ea_path = project_root / args.enrich_error_analysis
+        if not ea_path.is_absolute() and not ea_path.exists():
+            ea_path = results_dir / Path(args.enrich_error_analysis).name
+        if ea_path.exists():
+            with open(ea_path, "r", encoding="utf-8") as f:
+                error_analyses = json.load(f)
+            n = len(error_analyses.get("analyses", {}))
+            logger.info(f"Enrich(error-analysis) 로드: {ea_path} ({n}건 한글 해설)")
+        else:
+            logger.warning(f"Enrich(error-analysis) 파일 없음: {ea_path}")
+
+    transformed_analyses = None
+    if args.enrich_transformed_analysis:
+        ta_path = project_root / args.enrich_transformed_analysis
+        if not ta_path.is_absolute() and not ta_path.exists():
+            ta_path = results_dir / Path(args.enrich_transformed_analysis).name
+        if ta_path.exists():
+            with open(ta_path, "r", encoding="utf-8") as f:
+                transformed_analyses = json.load(f)
+            n = sum(
+                1 for per_q in transformed_analyses.get("analyses", {}).values()
+                for per_t in per_q.values()
+                for _ in per_t.values()
+            )
+            logger.info(f"Enrich(transformed-analysis) 로드: {ta_path} ({n}건 해설)")
+        else:
+            logger.warning(f"Enrich(transformed-analysis) 파일 없음: {ta_path}")
+
+    html_content = generate_html(
+        data,
+        preloaded_annotations=preloaded,
+        enrich_reasons=enrich_reasons,
+        enrich_mems=enrich_mems,
+        error_tags=error_tags,
+        error_analyses=error_analyses,
+        transformed_analyses=transformed_analyses,
+    )
 
     if args.output:
         output_name = args.output
