@@ -91,6 +91,50 @@ CONFIDENCE: <0.0~1.0>
 """
 
 
+ORIGINAL_PROMPT = """당신은 금융 계산 오류 분석 전문가입니다.
+반드시 한글로 답변하세요.
+
+**중요**: 이 문제는 **원본 context**(변환되지 않은 원래 문제)에 대한 모델 응답입니다.
+"변환", "변환된 맥락" 등의 표현을 사용하지 마세요. 그냥 "문제", "context", "주어진 데이터"라고 하세요.
+
+## 문제
+{question}
+
+## 정답 계산 코드 (정답을 어떻게 도출하는지)
+```python
+{python_solution}
+```
+
+## 정답
+{ground_truth}
+
+## Context (모델이 본 원본 데이터, 변형 없음)
+{context_original}
+
+## 모델 응답
+예측값: {predicted_answer}
+
+응답 원문:
+{raw_response}
+
+## 태스크
+모델이 **원본 문제**에서 오답을 냈습니다. 왜 틀렸는지 분석하세요.
+
+분석 순서:
+1. python_solution이 요구하는 값들을 나열
+2. 모델이 응답에서 사용한 값들과 비교
+3. 어느 단계에서 틀렸는지 (값 추출 / 공식 / 계산 / 단위 / 문제 이해)
+
+## 응답 형식 (정확히 이 포맷)
+ERROR_TYPE: <FORMULA_ERROR|EXTRACTION_ERROR|CALCULATION_ERROR|MISUNDERSTANDING|UNIT_ERROR|LOGIC_ERROR|INCOMPLETE>
+SUMMARY: <한 줄 요약 — "변환" 표현 사용 금지>
+DETAILED_ANALYSIS: <2~3문장 — context에서 어떤 값을 잘못 썼거나 공식을 잘못 적용했는지>
+LIKELY_CAUSE: <한 문장>
+CORRECT_APPROACH: <1~2문장 — python_solution의 방법 기반>
+CONFIDENCE: <0.0~1.0>
+"""
+
+
 WRONG_PROMPT = """당신은 금융 계산 오류 분석 전문가입니다.
 반드시 한글로 답변하세요.
 
@@ -203,44 +247,50 @@ async def generate_one(
         python_solution = problem.get("python_solution", "# not available")
         ground_truth = problem.get("ground_truth", "")
 
-        if transformation_type:
-            tx = problem.get("transformations", {}).get(transformation_type, {})
-            context_transformed = tx.get("context_transformed", "") or ""
-            removed = tx.get("removed_or_modified", "") or tx.get("description", "")
-            ttype_label = transformation_type
-        else:
-            # Original context
-            context_transformed = problem.get("context_original", "")
-            removed = "(원본 context, 변환 없음)"
-            ttype_label = "original"
-
         predicted = record.get("predicted_answer", "") or ""
         raw = (record.get("raw_response", "") or "")[:1800]
         is_refusal = _is_refusal(record)
 
-        if is_refusal:
-            prompt = REFUSAL_PROMPT.format(
+        if transformation_type is None:
+            # Original context — dedicated prompt, no "transformation" framing
+            prompt = ORIGINAL_PROMPT.format(
                 question=question[:1500],
                 python_solution=str(python_solution)[:2000],
                 ground_truth=ground_truth,
-                transformation_type=ttype_label,
-                removed_or_modified=str(removed)[:600],
-                context_transformed=str(context_transformed)[:2500],
-                raw_response=raw,
-            )
-            system_msg = "당신은 금융 LLM 거부 판정의 타당성을 분석하는 전문가입니다. 한글로 답변하세요."
-        else:
-            prompt = WRONG_PROMPT.format(
-                question=question[:1500],
-                python_solution=str(python_solution)[:2000],
-                ground_truth=ground_truth,
-                transformation_type=ttype_label,
-                removed_or_modified=str(removed)[:600],
-                context_transformed=str(context_transformed)[:2500],
+                context_original=str(problem.get("context_original", ""))[:2500],
                 predicted_answer=predicted,
                 raw_response=raw,
             )
-            system_msg = "당신은 금융 계산 오류 분석 전문가입니다. 한글로 답변하세요."
+            system_msg = "당신은 금융 계산 오류 분석 전문가입니다. '변환' 표현은 사용하지 말고 한글로 답변하세요."
+        else:
+            tx = problem.get("transformations", {}).get(transformation_type, {})
+            context_transformed = tx.get("context_transformed", "") or ""
+            removed = tx.get("removed_or_modified", "") or tx.get("description", "")
+            ttype_label = transformation_type
+
+            if is_refusal:
+                prompt = REFUSAL_PROMPT.format(
+                    question=question[:1500],
+                    python_solution=str(python_solution)[:2000],
+                    ground_truth=ground_truth,
+                    transformation_type=ttype_label,
+                    removed_or_modified=str(removed)[:600],
+                    context_transformed=str(context_transformed)[:2500],
+                    raw_response=raw,
+                )
+                system_msg = "당신은 금융 LLM 거부 판정의 타당성을 분석하는 전문가입니다. 한글로 답변하세요."
+            else:
+                prompt = WRONG_PROMPT.format(
+                    question=question[:1500],
+                    python_solution=str(python_solution)[:2000],
+                    ground_truth=ground_truth,
+                    transformation_type=ttype_label,
+                    removed_or_modified=str(removed)[:600],
+                    context_transformed=str(context_transformed)[:2500],
+                    predicted_answer=predicted,
+                    raw_response=raw,
+                )
+                system_msg = "당신은 금융 계산 오류 분석 전문가입니다. 한글로 답변하세요."
 
         try:
             text = await _call_openai(client, model, prompt, system_msg)
